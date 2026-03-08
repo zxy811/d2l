@@ -18,14 +18,3 @@
 
         print(id(Z) == before_id)  # 在 PyTorch 中依然输出 True
     ```
-
-
-mkdir D:\zxy_github_export
-cd D:\zxy_github_export
-git init
-xcopy "D:\zxy_github\Simple-LIO-SAM" "D:\zxy_github_export\" /E /I /H
-git remote add origin git@github.com:zxy811/Simple-Lio-Sam.git
-git add .
-git commit -m "迁移 Simple-LIO-SAM 到本仓库"
-git branch -M main
-git push -u origin main --force
