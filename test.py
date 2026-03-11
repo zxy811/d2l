@@ -823,156 +823,653 @@
 # if __name__ == "__main__":
 #     main()
 
+# import torch
+# from torch import nn
+# from d2l import torch as d2l
+# from torch.nn import functional as F
 
-import hashlib
-import os
-import tarfile
-import zipfile
-import requests
-import pandas as pd
+# class MLP(nn.Module):
+#     def __init__(self):
+#         super().__init__()
+#         self.hidden = nn.Linear(20, 256)
+#         self.out = nn.Linear(256, 10)
+#     def forward(self, X):
+#         print(X)
+#         X = torch.relu(self.hidden(X))
+#         return self.out(X)
+# net = MLP()
+# print(net(torch.rand(2, 20)))
+# class MySequential(nn.Module):
+#     def __init__(self, *args):
+#         super().__init__()
+#         for idx, module in enumerate(args):
+#             self._modules[str(idx)] = module
+#     def forward(self, X):
+#         for block in self._modules.values():
+#             X = block(X)
+#         return X
+# net = MySequential(nn.Linear(20, 256), nn.ReLU(), nn.Linear(256, 10))
+# print(net(torch.rand(2, 20)))
+
+# import torch
+# from torch import nn
+# net = nn.Sequential(nn.Linear(4,8), nn.ReLU(), nn.Linear(8,1))
+# X=torch.rand(size=(2, 4))
+# print(net(X))
+# print(net[0].weight)
+# print(net[0].bias)
+# print(net[2].weight)
+# print(net[2].bias)
+# print(*[(name, param.shape) for name, param in net.named_parameters()])
+# print(*[(name, param.shape) for name, param in net[0].named_parameters()])
+# print(net.state_dict()['0.weight'])
+# print(net.state_dict()['0.bias'])
+# print(net.state_dict()['2.weight'])
+# print(net.state_dict()['2.bias'])
+# def block1():
+#     return nn.Sequential(nn.Linear(4,8), nn.ReLU(), nn.Linear(8,4), nn.ReLU())
+# def block2():
+#     net = nn.Sequential()
+#     for i in range(4):
+#         net.add_module(f'block {i}', block1())
+#     return net
+# rgnet = nn.Sequential(block2(), nn.Linear(4,1))
+# X=torch.rand(size=(2, 4))
+# print(rgnet)
+# print(rgnet[0][1][0].weight.data)
+# print(*[(name, param.shape) for name, param in rgnet.named_parameters()])
+# print(*[(name, param.shape) for name, param in rgnet[0][1][0].named_parameters()])
+# print(rgnet[0][1][0].weight)
+# print(rgnet[0][1][0].bias)
+# print(rgnet[1].weight)
+# print(rgnet[1].bias)
+
+# import torch
+# from torch import nn
+
+# """延后初始化"""
+# net = nn.Sequential(nn.LazyLinear(256), nn.ReLU(), nn.LazyLinear(10))
+# # print(net[0].weight)  # 尚未初始化
+# print(net)
+# print("--------------------------------")
+# X = torch.rand(2, 20)
+# net(X)
+# print(net)
+# import torch
+# import torch.nn.functional as F
+# from torch import nn
+# class CenteredLayer(nn.Module):
+#     def __init__(self):
+#         super().__init__()
+#     def forward(self, X):
+#         return X - X.mean()
+# layer = CenteredLayer()
+# print(layer(torch.tensor([1, 2, 3, 4, 5], dtype=torch.float32)))
+# net = nn.Sequential(nn.LazyLinear(8), CenteredLayer())
+# print(net(torch.rand(2, 64)))
+# print(net)
+# class MyLinear(nn.Module):
+#     def __init__(self, in_units, units):
+#         super().__init__()
+#         self.weight = nn.Parameter(torch.randn(in_units, units))
+#         self.bias = nn.Parameter(torch.randn(units,))
+#     def forward(self, X):
+#         linear = torch.matmul(X, self.weight.data) + self.bias.data
+#         return F.relu(linear)
+# linear = MyLinear(5, 3)
+# print(linear.weight)
+# print(linear.bias)
+# print(linear(torch.rand(2, 5)))
+# import torch
+# from torch import nn
+# from torch.nn import functional as F
+# x=torch.arange(4.0)
+# y=torch.zeros(4)
+# torch.save(x,'x-file.py')
+# x2=torch.load('x-file.py')
+# print(x2)
+# mydict={'x':x,'y':y}
+# torch.save(mydict,'mydict.pth')
+# mydict2=torch.load('mydict.pth')
+# print(mydict2)
+# class MLP(nn.Module):
+#     def __init__(self):
+#         super().__init__()
+#         self.hidden = nn.Linear(20, 256)
+#         self.out = nn.Linear(256, 10)
+#     def forward(self, X):
+#         return self.out(F.relu(self.hidden(X)))
+# net = MLP()
+# X = torch.randn(size=(2, 20))
+# Y = net(X)
+# print(Y)
+# torch.save(net.state_dict(), 'mlp.params')
+# mlp = MLP()
+# mlp.load_state_dict(torch.load('mlp.params'))
+# print(mlp(X))
+# # torch.cuda.device_count()
+# def try_gpu(i=0):
+#     if torch.cuda.device_count() >= i + 1:
+#         return torch.device(f'cuda:{i}')
+#     return torch.device('cpu')
+def try_all_gpus():
+    devices = [torch.device(f'cuda:{i}') for i in range(torch.cuda.device_count())]
+    return devices if devices else [torch.device('cpu')]
+# # print(try_gpu())
+# # print(try_gpu(10))
+# # print(try_all_gpus())
+# x=torch.arange(4)
+# print(x.device)
+
+
+# import torch
+# from torch import nn
+# from d2l import torch as d2l
+
+# def corr2d(X, K):
+#     h, w = K.shape
+#     Y = torch.zeros((X.shape[0] - h + 1, X.shape[1] - w + 1))
+#     for i in range(Y.shape[0]):
+#         for j in range(Y.shape[1]):
+#             Y[i, j] = (X[i:i+h, j:j+w] * K).sum()
+#     return Y
+# # X = torch.tensor([[0, 1, 2], [3, 4, 5], [6, 7, 8]])
+# # K = torch.tensor([[0, 1], [2, 3]])
+# # print(corr2d(X, K))
+
+# class Conv2D(nn.Module):
+#     def __init__(self, kernel_size):
+#         super().__init__()
+#         self.weight = nn.Parameter(torch.rand(kernel_size))
+#         self.bias = nn.Parameter(torch.zeros(1))
+#     def forward(self, X):
+#         return corr2d(X, self.weight) + self.bias
+# conv2d = Conv2D(kernel_size=(1, 2))
+# print(conv2d(X))
+
+# X=torch.ones((6, 8))
+# X[:, 2:6] = 0   # 将X的第2到第6列设置为0
+# # print(X)
+# K = torch.tensor([[1.0, -1.0]])
+# # print(K)
+# Y = corr2d(X, K)
+# # print(Y)
+# conv2d = nn.Conv2d(1,1, kernel_size=(1, 2), bias=False)
+# X = X.reshape((1, 1, 6, 8))
+# Y = Y.reshape((1, 1, 6, 7))
+# lr = 3e-2  # 学习率
+# for i in range(10):
+#     Y_hat = conv2d(X)
+#     l = (Y_hat - Y) ** 2
+#     conv2d.zero_grad()
+#     l.sum().backward()
+#     conv2d.weight.data[:] -= lr * conv2d.weight.grad
+#     if (i + 1) % 2 == 0:
+#         print(f'epoch {i + 1}, loss {float(l.sum()):f}')
+# print(conv2d.weight.data)
+
+# import torch
+# from torch import nn
+# from d2l import torch as d2l
+# from torch.nn import functional as F
+
+# def comp_conv2d(conv2d, X):
+#     X = X.reshape((1, 1) + X.shape)
+#     Y = conv2d(X)
+#     return Y.reshape(Y.shape[2:])
+# conv2d = nn.Conv2d(1,1, kernel_size=3, padding=1,stride=2)
+# X = torch.rand(size=(8, 8))
+# print(comp_conv2d(conv2d, X).shape)
+
+# import torch
+# from d2l import torch as d2l
+# def corr2d_multi_in(X, K):
+#     return sum(d2l.corr2d(x, k) for x, k in zip(X, K))
+# # X = torch.tensor([[[0.0, 1.0, 2.0], [3.0, 4.0, 5.0], [6.0, 7.0, 8.0]],
+# #                [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]]])
+# # K = torch.tensor([[[0.0, 1.0], [2.0, 3.0]], [[1.0, 2.0], [3.0, 4.0]]])
+# # print(corr2d_multi_in(X, K))    
+# # print(X.shape)
+# # print(K.shape)
+# # print(corr2d_multi_in(X, K).shape)  
+
+# def corr2d_multi_in_out(X, K):
+#     return torch.stack([corr2d_multi_in(X, k) for k in K], dim=0)
+# X = torch.tensor([[[0.0, 1.0, 2.0], [3.0, 4.0, 5.0], [6.0, 7.0, 8.0]],
+#                [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]]])
+# K = torch.tensor([[[0.0, 1.0], [2.0, 3.0]], [[1.0, 2.0], [3.0, 4.0]]])
+# K=torch.stack((K, K + 1, K + 2))
+# print(corr2d_multi_in_out(X, K))    
+# print(X.shape)
+# print(X)
+# print(K.shape)
+# print(K)
+# print(corr2d_multi_in_out(X, K).shape)  
+
+# def corr2d_multi_in_out_1x1(X, K):
+#     c_i, h, w = X.shape
+#     c_o = K.shape[0]
+#     X = X.reshape((c_i, h * w))
+#     K = K.reshape((c_o, c_i))
+#     Y = torch.matmul(K, X)
+#     return Y.reshape((c_o, h, w))
+# X = torch.normal(0, 1, (3, 3, 3))
+# K = torch.normal(0, 1, (2, 3, 1, 1))
+# print(corr2d_multi_in_out_1x1(X, K))
+# print(X.shape)
+# print(K.shape)
+
+# import torch
+# from torch import nn
+# from d2l import torch as d2l
+# # def pool2d(X, pool_size, mode='max'):
+# #     p_h, p_w = pool_size
+# #     Y = torch.zeros((X.shape[0] - p_h + 1, X.shape[1] - p_w + 1))
+# #     for i in range(Y.shape[0]):
+# #         for j in range(Y.shape[1]):
+# #             if mode == 'max':
+# #                 Y[i, j] = X[i:i+p_h, j:j+p_w].max()
+# #             elif mode == 'avg':
+# #                 Y[i, j] = X[i:i+p_h, j:j+p_w].mean()
+# #     return Y
+# X = torch.arange(16, dtype=torch.float32).reshape((1, 1, 4, 4))
+# print(X)
+# # pool2d=nn.MaxPool2d(3)
+# pool2d=nn.MaxPool2d(3,padding=1,stride=2)
+# print(pool2d(X))
+# import torch
+
+# import torch
+# from torch import nn
+# from d2l import torch as d2l
+
+
+def evaluate_accuracy(net,data_iter):
+            if isinstance(net,torch.nn.Module):
+                net.eval()
+            metric=Accumulator(2)
+            with torch.no_grad():
+                for X,y in data_iter:
+                    metric.add(accuracy(net(X),y),y.numel())
+            return metric[0] / metric[1]
+class Accumulator:
+            def __init__(self,n):
+                self.data=[0.0]*n
+            def add(self,*args):
+                self.data=[a+float(b) for a,b in zip(self.data,args)]
+            def reset(self):
+                self.data=[0.0]*len(self.data)
+            def __getitem__(self,idx):
+                return self.data[idx]
+def accuracy(y_hat,y):
+            if len(y_hat.shape)>1 and y_hat.shape[1]>1:
+                y_hat=y_hat.argmax(dim=1)
+            cmp=y_hat.type(y.dtype)==y
+            return float(cmp.type(y.dtype).sum())
+def train_ch6(net,train_iter,test_iter,num_epochs,lr,device):
+            def init_weights(m):
+                if type(m)==nn.Linear or type(m)==nn.Conv2d:
+                    nn.init.xavier_uniform_(m.weight)
+            net.apply(init_weights)
+            print('training on',device)
+            net.to(device)
+            optimizer=torch.optim.SGD(net.parameters(),lr=lr)
+            loss=nn.CrossEntropyLoss()
+            animator=d2l.Animator(xlabel='epoch',xlim=[1,num_epochs],legend=['train loss','train acc','test acc'])
+            timer,num_batches=d2l.Timer(),len(train_iter)
+            for epoch in range(num_epochs):
+                metric=d2l.Accumulator(3)
+                net.train()
+                for i,(X,y) in enumerate(train_iter):
+                    timer.start()
+                    optimizer.zero_grad()
+                    X,y=X.to(device),y.to(device)
+                    y_hat=net(X)
+                    l=loss(y_hat,y)
+                    l.backward()
+                    optimizer.step()
+                    with torch.no_grad():
+                        metric.add(l*X.shape[0],accuracy(y_hat,y),y.numel())
+                    timer.stop()
+                    train_l=metric[0]/metric[2]
+                    train_acc=metric[1]/metric[2]
+                    for layer in net:
+                        X=layer(X)
+                        print(layer.__class__.__name__,'output shape:\t',X.shape)
+                    if (i+1)%(num_batches//5)==0 or i==num_batches-1:
+                        animator.add(epoch+(i+1)/num_batches,(train_l,train_acc,None))
+                test_acc=evaluate_accuracy(net,test_iter)
+                animator.add(epoch+1,(None,None,test_acc))
+            print(f'loss {train_l:.3f}, train acc {train_acc:.3f}, test acc {test_acc:.3f}')
+            print(f'{metric[2]*num_epochs/timer.sum():.1f} examples/sec on {str(device)}')
+
+
+# def vgg_block(num_convs, in_channels, out_channels):
+#     layers = []
+#     for _ in range(num_convs):
+#         layers.append(nn.Conv2d(in_channels, out_channels,
+#                                 kernel_size=3, padding=1))
+#         layers.append(nn.ReLU())
+#         in_channels = out_channels
+#     layers.append(nn.MaxPool2d(kernel_size=2,stride=2))
+#     return nn.Sequential(*layers)
+# conv_arch = ((1, 64), (1, 128), (2, 256), (2, 512), (2, 512))
+# def vgg(conv_arch):
+#     conv_blks = []
+#     in_channels = 1
+#     for (num_convs, out_channels) in conv_arch:
+#         conv_blks.append(vgg_block(num_convs, in_channels, out_channels))
+#         in_channels = out_channels
+#     return nn.Sequential(*conv_blks, nn.Flatten(), nn.Linear(out_channels * 7 * 7, 4096), nn.ReLU(), nn.Dropout(0.5), nn.Linear(4096, 4096), nn.ReLU(), nn.Dropout(0.5), nn.Linear(4096, 10))
+# # net = vgg(conv_arch)
+# # print(net)
+# # X=torch.rand(size=(1, 1, 224, 224))
+# # for blk in net:
+# #     X=blk(X)
+# #     print(blk.__class__.__name__,'output shape:\t',X.shape)
+# ratio=4
+# small_conv_arch = [(pair[0], pair[1] // ratio) for pair in conv_arch]
+# net = vgg(small_conv_arch)
+# print(net)
+# X=torch.rand(size=(1, 1, 224, 224))
+# for blk in net:
+#     X=blk(X)
+#     print(blk.__class__.__name__,'output shape:\t',X.shape)
+# lr,num_epochs,batch_size = 0.05,10,128
+# total_params = sum(p.numel() for p in net.parameters())
+# trainable_params = sum(p.numel() for p in net.parameters() if p.requires_grad)
+
+# print("总参数量：", total_params)
+# print("可训练参数量：", trainable_params)
+# train_iter,test_iter = d2l.load_data_fashion_mnist(batch_size,resize=224)
+# d2l.train_ch6(net,train_iter,test_iter,num_epochs,lr,d2l.try_gpu())
+
+
+
+
+# import torch
+# from torch import nn
+# from d2l import torch as d2l
+
+# def nin_block(in_channels, out_channels, kernel_size, strides, padding):
+#     return nn.Sequential(
+#         nn.Conv2d(in_channels, out_channels, kernel_size, strides, padding),
+#         nn.ReLU(),
+#         nn.Conv2d(out_channels, out_channels, kernel_size=1), nn.ReLU(),
+#         nn.Conv2d(out_channels, out_channels, kernel_size=1), nn.ReLU())
+
+# print(nin_block(1, 96, kernel_size=11, strides=4, padding=0))
+
+# net = nn.Sequential(
+#     nin_block(1, 96, kernel_size=11, strides=4, padding=0),
+#     nn.MaxPool2d(3, stride=2),
+#     nin_block(96, 256, kernel_size=5, strides=1, padding=2),
+#     nn.MaxPool2d(3, stride=2),
+#     nin_block(256, 384, kernel_size=3, strides=1, padding=1),
+#     nn.MaxPool2d(3, stride=2), nn.Dropout(0.5),
+#     nin_block(384, 10, kernel_size=3, strides=1, padding=1),
+#     nn.AdaptiveAvgPool2d((1, 1)),
+#     nn.Flatten())
+# print(net)
+# X = torch.randn(size=(1, 1, 224, 224))
+# for layer in net:
+#     X = layer(X)
+#     print(layer.__class__.__name__,'output shape:\t',X.shape)
+# lr,num_epochs,batch_size = 0.1,10,128
+# total_params = sum(p.numel() for p in net.parameters())
+# trainable_params = sum(p.numel() for p in net.parameters() if p.requires_grad)
+
+# print("总参数量：", total_params)
+# print("可训练参数量：", trainable_params)
+# train_iter,test_iter = d2l.load_data_fashion_mnist(batch_size,resize=224)
+# d2l.train_ch6(net,train_iter,test_iter,num_epochs,lr,d2l.try_gpu())
+
+# import torch
+# from torch import nn
+# from d2l import torch as d2l
+# from torch.nn import functional as F
+
+# class Inception(nn.Module):
+#     def __init__(self, in_channels, c1, c2, c3, c4, **kwargs):
+#         super(Inception, self).__init__(**kwargs)
+#         self.p1_1 = nn.Conv2d(in_channels, c1, kernel_size=1)
+#         self.p2_1 = nn.Conv2d(in_channels, c2[0], kernel_size=1)
+#         self.p2_2 = nn.Conv2d(c2[0], c2[1], kernel_size=3, padding=1)
+#         self.p3_1 = nn.Conv2d(in_channels, c3[0], kernel_size=1)
+#         self.p3_2 = nn.Conv2d(c3[0], c3[1], kernel_size=5, padding=2)
+#         self.p4_1 = nn.MaxPool2d(kernel_size=3, stride=1, padding=1)
+#         self.p4_2 = nn.Conv2d(in_channels, c4, kernel_size=1)
+#     def forward(self, x):
+#         p1 = F.relu(self.p1_1(x))
+#         p2 = F.relu(self.p2_2(F.relu(self.p2_1(x))))
+#         p3 = F.relu(self.p3_2(F.relu(self.p3_1(x))))
+#         p4 = F.relu(self.p4_2(self.p4_1(x)))
+#         return torch.cat([p1, p2, p3, p4], dim=1)
+# b1 = nn.Sequential(nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3),
+#                    nn.ReLU(),
+#                    nn.MaxPool2d(kernel_size=3, stride=2, padding=1))
+# b2 = nn.Sequential(nn.Conv2d(64, 64, kernel_size=1),
+#                    nn.ReLU(),
+#                    nn.Conv2d(64, 192, kernel_size=3, padding=1),
+#                    nn.ReLU(),
+#                    nn.MaxPool2d(kernel_size=3, stride=2, padding=1))
+# b3 = nn.Sequential(Inception(192, 64, (96, 128), (16, 32), 32),
+#                    Inception(256, 128, (128, 192), (32, 96), 64),
+#                    nn.MaxPool2d(kernel_size=3, stride=2, padding=1))
+# b4 = nn.Sequential(Inception(480, 192, (96, 208), (16, 48), 64),
+#                    Inception(512, 160, (112, 224), (24, 64), 64),
+#                    Inception(512, 128, (128, 256), (24, 64), 64),
+#                    Inception(512, 112, (144, 288), (32, 64), 64),
+#                    Inception(528, 256, (160, 320), (32, 128), 128),
+#                    nn.MaxPool2d(kernel_size=3, stride=2, padding=1))
+# b5 = nn.Sequential(Inception(832, 256, (160, 320), (32, 128), 128),
+#                    Inception(832, 384, (192, 384), (48, 128), 128),
+#                    nn.AdaptiveAvgPool2d((1,1)),
+#                    nn.Flatten())
+# net = nn.Sequential(b1, b2, b3, b4, b5, nn.Linear(1024, 10))
+# print(net)
+# print("--------------------------------")
+# print(b5)
+# X = torch.rand(size=(1, 1, 96, 96))
+# for layer in net:
+#     X = layer(X)
+#     print(layer.__class__.__name__,'output shape:\t',X.shape)
+# lr, num_epochs, batch_size = 0.1, 10, 128
+# train_iter, test_iter = d2l.load_data_fashion_mnist(batch_size, resize=96)
+# d2l.train_ch6(net, train_iter, test_iter, num_epochs, lr, d2l.try_gpu())
+
+# import torch
+# from torch import nn
+# from d2l import torch as d2l
+# from torch.nn import functional as F
+
+# def batch_norm(X, gamma, beta, moving_mean, moving_var, eps, momentum):
+#     if not torch.is_grad_enabled():
+#         X_hat = (X - moving_mean) / torch.sqrt(moving_var + eps)
+#     else:
+#         assert len(X.shape) in (2, 4)
+#         if len(X.shape) == 2:
+#             mean = X.mean(dim=0)
+#             var = ((X - mean) ** 2).mean(dim=0)
+#         else:
+#             mean = X.mean(dim=(0, 2, 3), keepdim=True)
+#             var = ((X - mean) ** 2).mean(dim=(0, 2, 3), keepdim=True)
+#         X_hat = (X - mean) / torch.sqrt(var + eps)
+#         moving_mean = momentum * moving_mean + (1.0 - momentum) * mean
+#         moving_var = momentum * moving_var + (1.0 - momentum) * var
+#     Y = gamma * X_hat + beta
+#     return Y, moving_mean, moving_var
+
+# class BatchNorm(nn.Module):
+#     def __init__(self, num_features, num_dims):
+#         super(BatchNorm, self).__init__()
+#         if num_dims == 2:
+#             shape = (1, num_features)
+#         else:
+#             shape = (1, num_features, 1, 1)
+#         self.gamma = nn.Parameter(torch.ones(shape))
+#         self.beta = nn.Parameter(torch.zeros(shape))
+#         self.moving_mean = torch.zeros(shape)
+#         self.moving_var = torch.ones(shape)
+#     def forward(self, X):
+#         if self.moving_mean.device != X.device:
+#             self.moving_mean = self.moving_mean.to(X.device)
+#             self.moving_var = self.moving_var.to(X.device)
+#         Y, self.moving_mean, self.moving_var = batch_norm(X, self.gamma, self.beta, self.moving_mean, self.moving_var, eps=1e-5, momentum=0.9)
+#         return Y
+    
+# # net = nn.Sequential(
+# #     nn.Conv2d(1, 6, kernel_size=5), BatchNorm(6, num_dims=4), nn.Sigmoid(),
+# #     nn.AvgPool2d(kernel_size=2, stride=2),
+# #     nn.Conv2d(6, 16, kernel_size=5), BatchNorm(16, num_dims=4), nn.Sigmoid(),
+# #     nn.AvgPool2d(kernel_size=2, stride=2), nn.Flatten(),
+# #     nn.Linear(16*4*4, 120), BatchNorm(120, num_dims=2), nn.Sigmoid(),
+# #     nn.Linear(120, 84), BatchNorm(84, num_dims=2), nn.Sigmoid(),
+# #     nn.Linear(84, 10))
+# net=nn.Sequential(nn.Conv2d(1, 6, kernel_size=5), nn.BatchNorm2d(6), nn.Sigmoid(),
+#     nn.AvgPool2d(kernel_size=2, stride=2),
+#     nn.Conv2d(6, 16, kernel_size=5), nn.BatchNorm2d(16), nn.Sigmoid(),
+#     nn.AvgPool2d(kernel_size=2, stride=2), nn.Flatten(),
+#     nn.Linear(16*4*4, 120), nn.BatchNorm1d(120), nn.Sigmoid(),
+#     nn.Linear(120, 84), nn.BatchNorm1d(84), nn.Sigmoid(),
+#     nn.Linear(84, 10))
+# # print(net)
+# # X = torch.rand(size=(1, 1, 28, 28))
+# # for layer in net:
+# #     X = layer(X)
+# #     print(layer.__class__.__name__,'output shape:\t',X.shape)
+
+# lr,num_epochs,batch_size = 0.1,10,32
+
+# # train_iter,test_iter = d2l.load_data_fashion_mnist(batch_size)
+# # for X,y in train_iter:
+# #     print(X.shape)
+# #     print(y.shape)
+# #     break
+# # d2l.train_ch6(net,train_iter,test_iter,num_epochs,lr,d2l.try_gpu())
+# # print(net[1].gamma.reshape((-1,)), net[1].beta.reshape((-1,)))
+# def main():
+#     train_iter,test_iter = d2l.load_data_fashion_mnist(batch_size)
+#     for X,y in train_iter:
+#         print(X.shape)
+#         print(y.shape)
+#         break
+#     d2l.train_ch6(net,train_iter,test_iter,num_epochs,lr,d2l.try_gpu())
+# if __name__ == "__main__":
+#     main()
+
+# import torch
+# from torch import nn
+# from d2l import torch as d2l
+# from torch.nn import functional as F
+# class Residual(nn.Module):
+#     def __init__(self, input_channels, num_channels, use_1x1conv=False, strides=1):
+#         super().__init__()
+#         self.conv1 = nn.Conv2d(input_channels, num_channels, kernel_size=3, padding=1, stride=strides)
+#         self.conv2 = nn.Conv2d(num_channels, num_channels, kernel_size=3, padding=1)
+#         if use_1x1conv:
+#             self.conv3 = nn.Conv2d(input_channels, num_channels, kernel_size=1, stride=strides)
+#         else:
+#             self.conv3 = None
+#         self.bn1 = nn.BatchNorm2d(num_channels)
+#         self.bn2 = nn.BatchNorm2d(num_channels)
+#     def forward(self, X):
+#         Y = F.relu(self.bn1(self.conv1(X)))
+#         Y = self.bn2(self.conv2(Y))
+#         if self.conv3:
+#             X = self.conv3(X)
+#         Y += X
+#         return F.relu(Y)
+# blk = Residual(3,6,use_1x1conv=True)
+# X = torch.rand(4, 3, 6, 6)
+# Y = blk(X)
+# print(Y.shape)
+# b1 = nn.Sequential(nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3),
+#                    nn.BatchNorm2d(64), nn.ReLU(),
+#                    nn.MaxPool2d(kernel_size=3, stride=2, padding=1))
+# print(b1)
+# X = torch.rand(size=(1, 1, 224, 224))
+# for layer in b1:
+#     X = layer(X)
+#     print(layer.__class__.__name__,'output shape:\t',X.shape)
+# def resnet_block(input_channels, num_channels, num_residuals, first_block=False):
+#     blk = []
+#     for i in range(num_residuals):
+#         if i == 0 and not first_block:
+#             blk.append(Residual(input_channels, num_channels, use_1x1conv=True, strides=2))
+#         else:
+#             blk.append(Residual(num_channels, num_channels))
+#     return blk
+# b2 = nn.Sequential(*resnet_block(64, 64, 2, first_block=True))
+# b3 = nn.Sequential(*resnet_block(64, 128, 2))
+# b4 = nn.Sequential(*resnet_block(128, 256, 2))
+# b5 = nn.Sequential(*resnet_block(256, 512, 2))
+# net = nn.Sequential(b1, b2, b3, b4, b5, nn.AdaptiveAvgPool2d((1,1)), nn.Flatten(), nn.Linear(512, 10))
+# # print(net)
+# # X = torch.rand(size=(1, 1, 224, 224))
+# # for layer in net:
+# #     X = layer(X)
+# #     print(layer.__class__.__name__,'output shape:\t',X.shape)
+# lr,num_epochs,batch_size = 0.05,10,256
+# train_iter,test_iter = d2l.load_data_fashion_mnist(batch_size,resize=96)
+# d2l.train_ch6(net,train_iter,test_iter,num_epochs,lr,d2l.try_gpu())
+
 import torch
 from torch import nn
 from d2l import torch as d2l
-import numpy as np
-
-
-#@save
-DATA_HUB = dict()
-DATA_URL = 'http://d2l-data.s3-accelerate.amazonaws.com/'
-
-def download(name, cache_dir=os.path.join('..', 'data')):  #@save
-    """下载一个DATA_HUB中的文件，返回本地文件名"""
-    assert name in DATA_HUB, f"{name} 不存在于 {DATA_HUB}"
-    url, sha1_hash = DATA_HUB[name]
-    os.makedirs(cache_dir, exist_ok=True)
-    fname = os.path.join(cache_dir, url.split('/')[-1])
-    if os.path.exists(fname):
-        sha1 = hashlib.sha1()
-        with open(fname, 'rb') as f:
-            while True:
-                data = f.read(1048576)
-                if not data:
-                    break
-                sha1.update(data)
-        if sha1.hexdigest() == sha1_hash:
-            return fname  # 命中缓存
-    print(f'正在从{url}下载{fname}...')
-    r = requests.get(url, stream=True, verify=True)
-    with open(fname, 'wb') as f:
-        f.write(r.content)
-    return fname
-# download('kaggle_house_train')
-def download_extract(name, folder=None):  #@save
-    """下载并解压zip/tar文件"""
-    fname = download(name)
-    base_dir = os.path.dirname(fname)
-    data_dir, ext = os.path.splitext(fname)
-    if ext == '.zip':
-        fp = zipfile.ZipFile(fname, 'r')
-    elif ext == '.tar':
-        fp = tarfile.open(fname, 'r')
-    else:
-        assert False, '只有zip/tar文件可以被解压缩'
-    fp.extractall(base_dir)
-    return os.path.join(base_dir, folder) if folder else data_dir
-def download_all():  #@save
-    """下载DATA_HUB中的所有文件"""
-    for name in DATA_HUB:
-        download(name)
-DATA_HUB['kaggle_house_train'] = (  #@save
-DATA_URL + 'kaggle_house_pred_train.csv','585e9cc93e70b39160e7921475f9bcd7d31219ce')
-DATA_HUB['kaggle_house_test'] = (  #@save
-DATA_URL + 'kaggle_house_pred_test.csv','fa19780a7b011d9b009e8bff8e99922a8ee2eb90')
-train_data = pd.read_csv(download('kaggle_house_train'))
-test_data = pd.read_csv(download('kaggle_house_test'))
-print(train_data.shape)
-print(test_data.shape)
-# print(train_data.head())
-# print(test_data.head())
-# print(train_data.info())
-# print(test_data.info())
-all_features = pd.concat((train_data.iloc[:, 1:-1], test_data.iloc[:, 1:]))
-print(all_features.shape)
-numeric_features = all_features.dtypes[all_features.dtypes != 'object'].index
-all_features[numeric_features] = all_features[numeric_features].apply(
-    lambda x: (x - x.mean()) / (x.std()))
-# 在标准化数据之后，所有均值消失，因此我们可以将缺失值设置为0
-all_features[numeric_features] = all_features[numeric_features].fillna(0)
-all_features = pd.get_dummies(all_features, dummy_na=True)
-print(all_features.shape)
-n_train = train_data.shape[0]
-train_features = torch.tensor(all_features[:n_train].to_numpy(dtype=np.float32))
-test_features = torch.tensor(all_features[n_train:].to_numpy(dtype=np.float32))
-train_labels = torch.tensor(train_data.SalePrice.values.reshape(-1, 1), dtype=torch.float32)
-
-print(train_features.shape)
-print(test_features.shape)
-print(train_labels.shape)
-loss=nn.MSELoss()
-in_features = train_features.shape[1]
-def get_net():
-    net = nn.Sequential(nn.Linear(in_features,1))
-    return net
-net = get_net()
-def log_rmse(net, features, labels):
-    clipp_preds = torch.clamp(net(features), 1, float('inf'))
-    rmse = torch.sqrt(loss(torch.log(clipp_preds), torch.log(labels)))
-    return rmse.item()
-def train(net, train_features, train_labels, test_features, test_labels, num_epochs, lr, weight_decay, batch_size):
-    train_ls, test_ls = [], []
-    train_iter = d2l.load_array((train_features, train_labels), batch_size)
-    optimizer = torch.optim.Adam(net.parameters(), lr=lr, weight_decay=weight_decay)
-    net.train()
-    for epoch in range(num_epochs):
-        for X, y in train_iter:
-            optimizer.zero_grad()
-            l = loss(net(X), y)
-            l.backward()
-            optimizer.step()
-        train_ls.append(log_rmse(net, train_features, train_labels))
-        if test_labels is not None:
-            test_ls.append(log_rmse(net, test_features, test_labels))
-    return train_ls, test_ls
-def get_k_fold_data(k, i, X, y):
-    assert k > 1
-    fold_size = X.shape[0] // k
-    X_train, y_train = None, None
-    for j in range(k):
-        idx = slice(j * fold_size, (j + 1) * fold_size)
-        X_part, y_part = X[idx, :], y[idx]
-        if j == i:
-            X_valid, y_valid = X_part, y_part
-        elif X_train is None:
-            X_train, y_train = X_part, y_part
-        else:
-            X_train = torch.cat([X_train, X_part], 0)
-            y_train = torch.cat([y_train, y_part], 0)
-    return X_train, y_train, X_valid, y_valid
-#下面的这个是K折交叉验证，一般用于我们去选超参数的设置的，然后你试出来哪一个最好之后并于下面的计算
-# def k_fold(k, X_train, y_train, num_epochs, lr, weight_decay, batch_size):
-#     train_l_sum, valid_l_sum = 0, 0
-#     for i in range(k):
-#         data = get_k_fold_data(k, i, X_train, y_train)
-#         net = get_net()
-#         train_ls, valid_ls = train(net, *data, num_epochs, lr, weight_decay, batch_size)
-#         train_l_sum += train_ls[-1]
-#         valid_l_sum += valid_ls[-1]
-#         if i == 0:
-#             d2l.plot(list(range(1, num_epochs + 1)), [train_ls, valid_ls], xlabel='epoch', ylabel='rmse', xlim=[1, num_epochs], legend=['train', 'valid'], yscale='log')
-#         print(f'折{i + 1}，训练log rmse{float(train_ls[-1]):f}, 验证log rmse{float(valid_ls[-1]):f}')
-#     return train_l_sum / k, valid_l_sum / k
-k, num_epochs, lr, weight_decay, batch_size = 5, 100, 5, 0, 64
-# train_l, valid_l = k_fold(k, train_features, train_labels, num_epochs, lr, weight_decay, batch_size)
-# print(f'{k}-折验证: 平均训练log rmse: {float(train_l):f}, 平均验证log rmse: {float(valid_l):f}')
-# d2l.plt.show()
-
-def train_and_pred(train_features, test_features, train_labels, test_data, num_epochs, lr, weight_decay, batch_size):
-    net = get_net()
-    train_ls, _ = train(net, train_features, train_labels, None, None, num_epochs, lr, weight_decay, batch_size)
-    d2l.plot(np.arange(1, num_epochs + 1), [train_ls], xlabel='epoch', ylabel='rmse', xlim=[1, num_epochs], yscale='log')
-    print(f'训练log rmse：{float(train_ls[-1]):f}')
-    preds = net(test_features).detach().numpy()
-    test_data['SalePrice'] = pd.Series(preds.reshape(1, -1)[0])
-    submission = pd.concat([test_data['Id'], test_data['SalePrice']], axis=1)
-    submission.to_csv('submission.csv', index=False)
-train_and_pred(train_features, test_features, train_labels, test_data, num_epochs, lr, weight_decay, batch_size)
+from torch.nn import functional as F
+def conv_block(input_channels, num_channels):
+    return nn.Sequential(
+        nn.BatchNorm2d(input_channels), nn.ReLU(),
+        nn.Conv2d(input_channels, num_channels, kernel_size=3, padding=1))
+class DenseBlock(nn.Module):
+    def __init__(self, num_convs, input_channels, num_channels):
+        super(DenseBlock, self).__init__()
+        layer = []
+        for i in range(num_convs):
+            layer.append(conv_block(
+                num_channels * i + input_channels, num_channels))
+        self.net = nn.Sequential(*layer)
+    def forward(self, X):
+        for blk in self.net:
+            Y = blk(X)
+            X = torch.cat((X, Y), dim=1)
+        return X
+# blk=DenseBlock(2,3,10)
+# X=torch.rand(size=(4,3,8,8))
+# Y=blk(X)
+# print(Y.shape)
+def transition_block(input_channels, num_channels):
+    return nn.Sequential(
+        nn.BatchNorm2d(input_channels), nn.ReLU(),
+        nn.Conv2d(input_channels, num_channels, kernel_size=1),
+        nn.AvgPool2d(kernel_size=2, stride=2))
+# blk=transition_block(23,10)
+# X=torch.rand(size=(4,23,8,8))
+# Y=blk(X)
+# print(Y.shape)
+# net=nn.Sequential(nn.Conv2d(1, 64, kernel_size=3, padding=1), DenseBlock(4, 64, 32), transition_block(32, 16), DenseBlock(4, 16, 16), transition_block(16, 8), DenseBlock(4, 8, 8), nn.AdaptiveAvgPool2d((1,1)), nn.Flatten(), nn.Linear(8, 10))
+# print(net)
+# X=torch.rand(size=(1, 1, 224, 224))
+b1=nn.Sequential(nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3),
+                   nn.BatchNorm2d(64), nn.ReLU(),
+                   nn.MaxPool2d(kernel_size=3, stride=2, padding=1))
+num_channels, growth_rate = 64, 32
+num_convs_in_dense_blocks = [4, 4, 4, 4]
+blks = []
+for i, num_convs in enumerate(num_convs_in_dense_blocks):
+    blks.append(DenseBlock(num_convs, num_channels, growth_rate))
+    num_channels += num_convs * growth_rate
+    if i != len(num_convs_in_dense_blocks) - 1:
+        blks.append(transition_block(num_channels, num_channels // 2))
+        num_channels = num_channels // 2
+net = nn.Sequential(b1, *blks, nn.BatchNorm2d(num_channels), nn.ReLU(), nn.AdaptiveAvgPool2d((1,1)), nn.Flatten(), nn.Linear(num_channels, 10))
+# print(net)
+# X=torch.rand(size=(1, 1, 224, 224))
+# for layer in net:
+#     X=layer(X)
+#     print(layer.__class__.__name__,'output shape:\t',X.shape)
+lr,num_epochs,batch_size = 0.1,10,256
+train_iter,test_iter = d2l.load_data_fashion_mnist(batch_size,resize=96)
+d2l.train_ch6(net,train_iter,test_iter,num_epochs,lr,d2l.try_gpu())
+   

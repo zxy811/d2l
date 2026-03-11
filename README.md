@@ -1,4 +1,4 @@
-## 1、内存优化管理方法
+## 内存优化管理方法
     Z[:] = X + Y 这种原地操作通过直接复用变量 Z 原有的内存空间来存储计算结果，避免了像 Z = X + Y 那样因创建新对象而产生的额外内存申请和瞬时内存峰值，从而显著提升了在大规模数据处理时的内存使用效率。
     ```bash
         可以通过下面的代码进行查看变量前后的内存位置是否一致
@@ -1405,3 +1405,464 @@ if __name__ == "__main__":
             submission.to_csv('submission.csv', index=False)
         train_and_pred(train_features, test_features, train_labels, test_data, num_epochs, lr, weight_decay, batch_size)
 '''
+## 多输入输出通道的实现
+就是这里需要注意你如果是多个输入通道但是只有一个输出通道那么这个情况就是，K的三个通道在返回的时候直接叠加了，如果你想要实现多个输出通道那么就相当于进行了多次上面的重复的计算
+'''bash
+        import torch
+        from d2l import torch as d2l
+        def corr2d_multi_in(X, K):
+            return sum(d2l.corr2d(x, k) for x, k in zip(X, K))
+        # X = torch.tensor([[[0.0, 1.0, 2.0], [3.0, 4.0, 5.0], [6.0, 7.0, 8.0]],
+        #                [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]]])
+        # K = torch.tensor([[[0.0, 1.0], [2.0, 3.0]], [[1.0, 2.0], [3.0, 4.0]]])
+        # print(corr2d_multi_in(X, K))    
+        # print(X.shape)
+        # print(K.shape)
+        # print(corr2d_multi_in(X, K).shape)  
+
+        def corr2d_multi_in_out(X, K):
+            return torch.stack([corr2d_multi_in(X, k) for k in K], dim=0)
+        X = torch.tensor([[[0.0, 1.0, 2.0], [3.0, 4.0, 5.0], [6.0, 7.0, 8.0]],
+                    [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]]])
+        K = torch.tensor([[[0.0, 1.0], [2.0, 3.0]], [[1.0, 2.0], [3.0, 4.0]]])
+        K=torch.stack((K, K + 1, K + 2))
+        print(corr2d_multi_in_out(X, K))    
+        print(X.shape)
+        print(X)
+        print(K.shape)
+        print(K)
+        print(corr2d_multi_in_out(X, K).shape)  
+'''
+## 为什么有时候需要降低分辨率
+降低分辨率并不是简单地抛弃信息，而是通过聚合和抽象，将像素级的细节转化为语义级的表示。它带来的好处包括：计算高效、感受野扩大、平移不变性增强、过拟合减少、特征层次化。因此，尽管直觉上“更清楚更好”，但在深度学习中，合适的分辨率变化才是设计的关键。
+## 池化层/汇聚层
+1. 实际上就是一个窗口与卷积一样只不过不是进行交叉运算而是将窗口内的数字取平均或者是最大，从而形成新的数字替代该位置\
+2. 与卷积不同的是汇聚层的输入输出通道数目是一样的不会在最后输出的时候进行求和运算
+    '''bash
+        import torch
+        from torch import nn
+        from d2l import torch as d2l
+        # def pool2d(X, pool_size, mode='max'):
+        #     p_h, p_w = pool_size
+        #     Y = torch.zeros((X.shape[0] - p_h + 1, X.shape[1] - p_w + 1))
+        #     for i in range(Y.shape[0]):
+        #         for j in range(Y.shape[1]):
+        #             if mode == 'max':
+        #                 Y[i, j] = X[i:i+p_h, j:j+p_w].max()
+        #             elif mode == 'avg':
+        #                 Y[i, j] = X[i:i+p_h, j:j+p_w].mean()
+        #     return Y
+        X = torch.arange(16, dtype=torch.float32).reshape((1, 1, 4, 4))
+        print(X)
+        # pool2d=nn.MaxPool2d(3)
+        pool2d=nn.MaxPool2d(3,padding=1,stride=2)
+        print(pool2d(X))
+
+    '''
+## LeNet的实现
+    '''bash
+        import torch
+        from torch import nn
+        from d2l import torch as d2l
+
+
+        net = nn.Sequential(
+            nn.Conv2d(1, 6, kernel_size=5, padding=2), nn.Sigmoid(),
+            nn.AvgPool2d(kernel_size=2, stride=2),
+            nn.Conv2d(6, 16, kernel_size=5), nn.Sigmoid(),
+            nn.AvgPool2d(kernel_size=2, stride=2),
+            nn.Flatten(),
+            nn.Linear(16 * 5 * 5, 120), nn.Sigmoid(),
+            nn.Linear(120, 84), nn.Sigmoid(),
+            nn.Linear(84, 10))
+        print(net)
+        # x=torch.rand(size=(1, 1, 28, 28))
+        # for layer in net:
+        #     x=layer(x)
+        #     print(layer.__class__.__name__,'output shape:\t',x.shape)
+        batch_size=256
+        train_iter,test_iter=d2l.load_data_fashion_mnist(batch_size)
+        def evaluate_accuracy(net,data_iter):
+            if isinstance(net,torch.nn.Module):
+                net.eval()
+            metric=Accumulator(2)
+            with torch.no_grad():
+                for X,y in data_iter:
+                    metric.add(accuracy(net(X),y),y.numel())
+            return metric[0] / metric[1]
+        class Accumulator:
+            def __init__(self,n):
+                self.data=[0.0]*n
+            def add(self,*args):
+                self.data=[a+float(b) for a,b in zip(self.data,args)]
+            def reset(self):
+                self.data=[0.0]*len(self.data)
+            def __getitem__(self,idx):
+                return self.data[idx]
+        def accuracy(y_hat,y):
+            if len(y_hat.shape)>1 and y_hat.shape[1]>1:
+                y_hat=y_hat.argmax(dim=1)
+            cmp=y_hat.type(y.dtype)==y
+            return float(cmp.type(y.dtype).sum())
+        def train_ch6(net,train_iter,test_iter,num_epochs,lr,device):
+            def init_weights(m):
+                if type(m)==nn.Linear or type(m)==nn.Conv2d:
+                    nn.init.xavier_uniform_(m.weight)
+            net.apply(init_weights)
+            print('training on',device)
+            net.to(device)
+            optimizer=torch.optim.SGD(net.parameters(),lr=lr)
+            loss=nn.CrossEntropyLoss()
+            animator=d2l.Animator(xlabel='epoch',xlim=[1,num_epochs],legend=['train loss','train acc','test acc'])
+            timer,num_batches=d2l.Timer(),len(train_iter)
+            for epoch in range(num_epochs):
+                metric=d2l.Accumulator(3)
+                net.train()
+                for i,(X,y) in enumerate(train_iter):
+                    timer.start()
+                    optimizer.zero_grad()
+                    X,y=X.to(device),y.to(device)
+                    y_hat=net(X)
+                    l=loss(y_hat,y)
+                    l.backward()
+                    optimizer.step()
+                    with torch.no_grad():
+                        metric.add(l*X.shape[0],accuracy(y_hat,y),y.numel())
+                    timer.stop()
+                    train_l=metric[0]/metric[2]
+                    train_acc=metric[1]/metric[2]
+                    for layer in net:
+                        X=layer(X)
+                        print(layer.__class__.__name__,'output shape:\t',X.shape)
+                    if (i+1)%(num_batches//5)==0 or i==num_batches-1:
+                        animator.add(epoch+(i+1)/num_batches,(train_l,train_acc,None))
+                test_acc=evaluate_accuracy(net,test_iter)
+                animator.add(epoch+1,(None,None,test_acc))
+            print(f'loss {train_l:.3f}, train acc {train_acc:.3f}, test acc {test_acc:.3f}')
+            print(f'{metric[2]*num_epochs/timer.sum():.1f} examples/sec on {str(device)}')
+        device=d2l.try_gpu()
+        print(f'training on {device}')
+        net.to(device)
+        train_ch6(net,train_iter,test_iter,num_epochs=10,lr=0.1,device=device)
+    '''
+## VGG模块的实现
+    '''bash
+        def vgg_block(num_convs, in_channels, out_channels):
+            layers = []
+            for _ in range(num_convs):
+                layers.append(nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1))
+                layers.append(nn.ReLU())
+                in_channels = out_channels
+            layers.append(nn.MaxPool2d(kernel_size=2,stride=2))
+            return nn.Sequential(*layers)
+        conv_arch = ((1, 64), (1, 128), (2, 256), (2, 512), (2, 512))
+        def vgg(conv_arch):
+            conv_blks = []
+            in_channels = 1
+            for (num_convs, out_channels) in conv_arch:
+                conv_blks.append(vgg_block(num_convs, in_channels, out_channels))
+                in_channels = out_channels
+            return nn.Sequential(*conv_blks, nn.Flatten(), nn.Linear(out_channels * 7 * 7, 4096), nn.ReLU(), nn.Dropout(0.5), nn.Linear(4096, 4096), nn.ReLU(), nn.Dropout(0.5), nn.Linear(4096, 10))
+        # net = vgg(conv_arch)
+        # print(net)
+        # X=torch.rand(size=(1, 1, 224, 224))
+        # for blk in net:
+        #     X=blk(X)
+        #     print(blk.__class__.__name__,'output shape:\t',X.shape)
+        ratio=4
+        small_conv_arch = [(pair[0], pair[1] // ratio) for pair in conv_arch]
+        net = vgg(small_conv_arch)
+        print(net)
+        X=torch.rand(size=(1, 1, 224, 224))
+    '''
+## nin模型的实现
+这个的突破性实现就是不使用全连接层，而是使用1*1的卷积代替全连接层的逻辑
+    '''bash
+        import torch
+        from torch import nn
+        from d2l import torch as d2l
+
+        def nin_block(in_channels, out_channels, kernel_size, strides, padding):
+            return nn.Sequential(
+                nn.Conv2d(in_channels, out_channels, kernel_size, strides, padding),
+                nn.ReLU(),
+                nn.Conv2d(out_channels, out_channels, kernel_size=1), nn.ReLU(),
+                nn.Conv2d(out_channels, out_channels, kernel_size=1), nn.ReLU())
+
+        print(nin_block(1, 96, kernel_size=11, strides=4, padding=0))
+
+        net = nn.Sequential(
+            nin_block(1, 96, kernel_size=11, strides=4, padding=0),
+            nn.MaxPool2d(3, stride=2),
+            nin_block(96, 256, kernel_size=5, strides=1, padding=2),
+            nn.MaxPool2d(3, stride=2),
+            nin_block(256, 384, kernel_size=3, strides=1, padding=1),
+            nn.MaxPool2d(3, stride=2), nn.Dropout(0.5),
+            nin_block(384, 10, kernel_size=3, strides=1, padding=1),
+            nn.AdaptiveAvgPool2d((1, 1)),
+            nn.Flatten())
+        print(net)
+        X = torch.randn(size=(1, 1, 224, 224))
+        for layer in net:
+            X = layer(X)
+            print(layer.__class__.__name__,'output shape:\t',X.shape)
+        lr,num_epochs,batch_size = 0.1,10,128
+        train_iter,test_iter = d2l.load_data_fashion_mnist(batch_size,resize=224)
+        d2l.train_ch6(net,train_iter,test_iter,num_epochs,lr,d2l.try_gpu())
+    '''
+## 计算模型的参数量
+        '''bash
+            total_params = sum(p.numel() for p in net.parameters())
+            trainable_params = sum(p.numel() for p in net.parameters() if p.requires_grad)
+
+            print("总参数量：", total_params)
+            print("可训练参数量：", trainable_params)
+        '''
+## goolenet
+这个里面也还是存在全连接层的，只不过与VGG相比实现了降维因为他在最后加了一个全局平均池化进行了降维也就是将图片的尺度降为1*1，大大减少了后面全连接层的参数量
+    '''bash
+
+        import torch
+        from torch import nn
+        from d2l import torch as d2l
+        from torch.nn import functional as F
+
+        class Inception(nn.Module):
+            def __init__(self, in_channels, c1, c2, c3, c4, **kwargs):
+                super(Inception, self).__init__(**kwargs)
+                self.p1_1 = nn.Conv2d(in_channels, c1, kernel_size=1)
+                self.p2_1 = nn.Conv2d(in_channels, c2[0], kernel_size=1)
+                self.p2_2 = nn.Conv2d(c2[0], c2[1], kernel_size=3, padding=1)
+                self.p3_1 = nn.Conv2d(in_channels, c3[0], kernel_size=1)
+                self.p3_2 = nn.Conv2d(c3[0], c3[1], kernel_size=5, padding=2)
+                self.p4_1 = nn.MaxPool2d(kernel_size=3, stride=1, padding=1)
+                self.p4_2 = nn.Conv2d(in_channels, c4, kernel_size=1)
+            def forward(self, x):
+                p1 = F.relu(self.p1_1(x))
+                p2 = F.relu(self.p2_2(F.relu(self.p2_1(x))))
+                p3 = F.relu(self.p3_2(F.relu(self.p3_1(x))))
+                p4 = F.relu(self.p4_2(self.p4_1(x)))
+                return torch.cat([p1, p2, p3, p4], dim=1)
+        b1 = nn.Sequential(nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3),
+                        nn.ReLU(),
+                        nn.MaxPool2d(kernel_size=3, stride=2, padding=1))
+        b2 = nn.Sequential(nn.Conv2d(64, 64, kernel_size=1),
+                        nn.ReLU(),
+                        nn.Conv2d(64, 192, kernel_size=3, padding=1),
+                        nn.ReLU(),
+                        nn.MaxPool2d(kernel_size=3, stride=2, padding=1))
+        b3 = nn.Sequential(Inception(192, 64, (96, 128), (16, 32), 32),
+                        Inception(256, 128, (128, 192), (32, 96), 64),
+                        nn.MaxPool2d(kernel_size=3, stride=2, padding=1))
+        b4 = nn.Sequential(Inception(480, 192, (96, 208), (16, 48), 64),
+                        Inception(512, 160, (112, 224), (24, 64), 64),
+                        Inception(512, 128, (128, 256), (24, 64), 64),
+                        Inception(512, 112, (144, 288), (32, 64), 64),
+                        Inception(528, 256, (160, 320), (32, 128), 128),
+                        nn.MaxPool2d(kernel_size=3, stride=2, padding=1))
+        b5 = nn.Sequential(Inception(832, 256, (160, 320), (32, 128), 128),
+                        Inception(832, 384, (192, 384), (48, 128), 128),
+                        nn.AdaptiveAvgPool2d((1,1)),
+                        nn.Flatten())
+        net = nn.Sequential(b1, b2, b3, b4, b5, nn.Linear(1024, 10))
+        print(net)
+        X = torch.rand(size=(1, 1, 96, 96))
+        for layer in net:
+            X = layer(X)
+            print(layer.__class__.__name__,'output shape:\t',X.shape)
+        lr, num_epochs, batch_size = 0.1, 10, 128
+        train_iter, test_iter = d2l.load_data_fashion_mnist(batch_size, resize=96)
+        d2l.train_ch6(net, train_iter, test_iter, num_epochs, lr, d2l.try_gpu())
+    '''
+## 数据的批量规范化
+进行数据批量化的原因主要是：一是为了解决数据之间大小不均衡的问题、二是进行这样的均衡化之后相当于引入了噪声模型的效果更好，类似于进行了正则化，使得模型不容易过拟合
+
+    '''bash
+
+        import torch
+        from torch import nn
+        from d2l import torch as d2l
+        from torch.nn import functional as F
+
+        def batch_norm(X, gamma, beta, moving_mean, moving_var, eps, momentum):
+            if not torch.is_grad_enabled():
+                X_hat = (X - moving_mean) / torch.sqrt(moving_var + eps)
+            else:
+                assert len(X.shape) in (2, 4)
+                if len(X.shape) == 2:
+                    mean = X.mean(dim=0)
+                    var = ((X - mean) ** 2).mean(dim=0)
+                else:
+                    mean = X.mean(dim=(0, 2, 3), keepdim=True)
+                    var = ((X - mean) ** 2).mean(dim=(0, 2, 3), keepdim=True)
+                X_hat = (X - mean) / torch.sqrt(var + eps)
+                moving_mean = momentum * moving_mean + (1.0 - momentum) * mean
+                moving_var = momentum * moving_var + (1.0 - momentum) * var
+            Y = gamma * X_hat + beta
+            return Y, moving_mean, moving_var
+
+        class BatchNorm(nn.Module):
+            def __init__(self, num_features, num_dims):
+                super(BatchNorm, self).__init__()
+                if num_dims == 2:
+                    shape = (1, num_features)
+                else:
+                    shape = (1, num_features, 1, 1)
+                self.gamma = nn.Parameter(torch.ones(shape))
+                self.beta = nn.Parameter(torch.zeros(shape))
+                self.moving_mean = torch.zeros(shape)
+                self.moving_var = torch.ones(shape)
+            def forward(self, X):
+                if self.moving_mean.device != X.device:
+                    self.moving_mean = self.moving_mean.to(X.device)
+                    self.moving_var = self.moving_var.to(X.device)
+                Y, self.moving_mean, self.moving_var = batch_norm(X, self.gamma, self.beta, self.moving_mean, self.moving_var, eps=1e-5, momentum=0.9)
+                return Y
+            
+        # net = nn.Sequential(
+        #     nn.Conv2d(1, 6, kernel_size=5), BatchNorm(6, num_dims=4), nn.Sigmoid(),
+        #     nn.AvgPool2d(kernel_size=2, stride=2),
+        #     nn.Conv2d(6, 16, kernel_size=5), BatchNorm(16, num_dims=4), nn.Sigmoid(),
+        #     nn.AvgPool2d(kernel_size=2, stride=2), nn.Flatten(),
+        #     nn.Linear(16*4*4, 120), BatchNorm(120, num_dims=2), nn.Sigmoid(),
+        #     nn.Linear(120, 84), BatchNorm(84, num_dims=2), nn.Sigmoid(),
+        #     nn.Linear(84, 10))
+        net=nn.Sequential(nn.Conv2d(1, 6, kernel_size=5), nn.BatchNorm2d(6), nn.Sigmoid(),
+            nn.AvgPool2d(kernel_size=2, stride=2),
+            nn.Conv2d(6, 16, kernel_size=5), nn.BatchNorm2d(16), nn.Sigmoid(),
+            nn.AvgPool2d(kernel_size=2, stride=2), nn.Flatten(),
+            nn.Linear(16*4*4, 120), nn.BatchNorm1d(120), nn.Sigmoid(),
+            nn.Linear(120, 84), nn.BatchNorm1d(84), nn.Sigmoid(),
+            nn.Linear(84, 10))
+        # print(net)
+        # X = torch.rand(size=(1, 1, 28, 28))
+        # for layer in net:
+        #     X = layer(X)
+        #     print(layer.__class__.__name__,'output shape:\t',X.shape)
+
+        lr,num_epochs,batch_size = 0.1,10,256
+
+        train_iter,test_iter = d2l.load_data_fashion_mnist(batch_size)
+        d2l.train_ch6(net,train_iter,test_iter,num_epochs,lr,d2l.try_gpu())
+        print(net[1].gamma.reshape((-1,)), net[1].beta.reshape((-1,)))
+    '''
+## resnet模型结构
+    '''bash
+
+        import torch
+        from torch import nn
+        from d2l import torch as d2l
+        from torch.nn import functional as F
+        class Residual(nn.Module):
+            def __init__(self, input_channels, num_channels, use_1x1conv=False, strides=1):
+                super().__init__()
+                self.conv1 = nn.Conv2d(input_channels, num_channels, kernel_size=3, padding=1, stride=strides)
+                self.conv2 = nn.Conv2d(num_channels, num_channels, kernel_size=3, padding=1)
+                if use_1x1conv:
+                    self.conv3 = nn.Conv2d(input_channels, num_channels, kernel_size=1, stride=strides)
+                else:
+                    self.conv3 = None
+                self.bn1 = nn.BatchNorm2d(num_channels)
+                self.bn2 = nn.BatchNorm2d(num_channels)
+            def forward(self, X):
+                Y = F.relu(self.bn1(self.conv1(X)))
+                Y = self.bn2(self.conv2(Y))
+                if self.conv3:
+                    X = self.conv3(X)
+                Y += X
+                return F.relu(Y)
+        blk = Residual(3,6,use_1x1conv=True)
+        X = torch.rand(4, 3, 6, 6)
+        Y = blk(X)
+        print(Y.shape)
+        b1 = nn.Sequential(nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3),
+                        nn.BatchNorm2d(64), nn.ReLU(),
+                        nn.MaxPool2d(kernel_size=3, stride=2, padding=1))
+        print(b1)
+        X = torch.rand(size=(1, 1, 224, 224))
+        for layer in b1:
+            X = layer(X)
+            print(layer.__class__.__name__,'output shape:\t',X.shape)
+        def resnet_block(input_channels, num_channels, num_residuals, first_block=False):
+            blk = []
+            for i in range(num_residuals):
+                if i == 0 and not first_block:
+                    blk.append(Residual(input_channels, num_channels, use_1x1conv=True, strides=2))
+                else:
+                    blk.append(Residual(num_channels, num_channels))
+            return blk
+        b2 = nn.Sequential(*resnet_block(64, 64, 2, first_block=True))
+        b3 = nn.Sequential(*resnet_block(64, 128, 2))
+        b4 = nn.Sequential(*resnet_block(128, 256, 2))
+        b5 = nn.Sequential(*resnet_block(256, 512, 2))
+        net = nn.Sequential(b1, b2, b3, b4, b5, nn.AdaptiveAvgPool2d((1,1)), nn.Flatten(), nn.Linear(512, 10))
+        print(net)
+        X = torch.rand(size=(1, 1, 224, 224))
+        for layer in net:
+            X = layer(X)
+            print(layer.__class__.__name__,'output shape:\t',X.shape)
+    '''
+## DenseNet -稠密连接网络
+相当于是RESNET的变体，两者的思想其实都是类似于泰勒展开的思想
+    '''bash
+        
+        import torch
+        from torch import nn
+        from d2l import torch as d2l
+        from torch.nn import functional as F
+        def conv_block(input_channels, num_channels):
+            return nn.Sequential(
+                nn.BatchNorm2d(input_channels), nn.ReLU(),
+                nn.Conv2d(input_channels, num_channels, kernel_size=3, padding=1))
+        class DenseBlock(nn.Module):
+            def __init__(self, num_convs, input_channels, num_channels):
+                super(DenseBlock, self).__init__()
+                layer = []
+                for i in range(num_convs):
+                    layer.append(conv_block(
+                        num_channels * i + input_channels, num_channels))
+                self.net = nn.Sequential(*layer)
+            def forward(self, X):
+                for blk in self.net:
+                    Y = blk(X)
+                    X = torch.cat((X, Y), dim=1)
+                return X
+        # blk=DenseBlock(2,3,10)
+        # X=torch.rand(size=(4,3,8,8))
+        # Y=blk(X)
+        # print(Y.shape)
+        def transition_block(input_channels, num_channels):
+            return nn.Sequential(
+                nn.BatchNorm2d(input_channels), nn.ReLU(),
+                nn.Conv2d(input_channels, num_channels, kernel_size=1),
+                nn.AvgPool2d(kernel_size=2, stride=2))
+        # blk=transition_block(23,10)
+        # X=torch.rand(size=(4,23,8,8))
+        # Y=blk(X)
+        # print(Y.shape)
+        # net=nn.Sequential(nn.Conv2d(1, 64, kernel_size=3, padding=1), DenseBlock(4, 64, 32), transition_block(32, 16), DenseBlock(4, 16, 16), transition_block(16, 8), DenseBlock(4, 8, 8), nn.AdaptiveAvgPool2d((1,1)), nn.Flatten(), nn.Linear(8, 10))
+        # print(net)
+        # X=torch.rand(size=(1, 1, 224, 224))
+        b1=nn.Sequential(nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3),
+                        nn.BatchNorm2d(64), nn.ReLU(),
+                        nn.MaxPool2d(kernel_size=3, stride=2, padding=1))
+        num_channels, growth_rate = 64, 32
+        num_convs_in_dense_blocks = [4, 4, 4, 4]
+        blks = []
+        for i, num_convs in enumerate(num_convs_in_dense_blocks):
+            blks.append(DenseBlock(num_convs, num_channels, growth_rate))
+            num_channels += num_convs * growth_rate
+            if i != len(num_convs_in_dense_blocks) - 1:
+                blks.append(transition_block(num_channels, num_channels // 2))
+                num_channels = num_channels // 2
+        net = nn.Sequential(b1, *blks, nn.BatchNorm2d(num_channels), nn.ReLU(), nn.AdaptiveAvgPool2d((1,1)), nn.Flatten(), nn.Linear(num_channels, 10))
+        # print(net)
+        # X=torch.rand(size=(1, 1, 224, 224))
+        # for layer in net:
+        #     X=layer(X)
+        #     print(layer.__class__.__name__,'output shape:\t',X.shape)
+        lr,num_epochs,batch_size = 0.1,10,256
+        train_iter,test_iter = d2l.load_data_fashion_mnist(batch_size,resize=96)
+        d2l.train_ch6(net,train_iter,test_iter,num_epochs,lr,d2l.try_gpu())
+        
+    '''
