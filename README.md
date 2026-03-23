@@ -1866,3 +1866,939 @@ if __name__ == "__main__":
         d2l.train_ch6(net,train_iter,test_iter,num_epochs,lr,d2l.try_gpu())
         
     '''
+## 文本序列的预处理
+    '''bash
+        import collections
+        import re
+        from d2l import torch as d2l
+        d2l.DATA_HUB['time_machine'] = (d2l.DATA_URL + 'timemachine.txt',
+                                        '090b5e7e70c295757f55df93cb0a180b9691891a')
+        def read_time_machine():
+            with open(d2l.download('time_machine'), 'r') as f:
+                lines = f.readlines()
+            return [re.sub('[^A-Za-z]+', ' ', line).strip().lower() for line in lines]
+        lines = read_time_machine()
+        print(lines[0])
+        print(lines[10])
+        print(len(lines))
+
+        def tokenize(lines, token='word'):
+            if token == 'word':
+                return [line.split() for line in lines]
+            elif token == 'char':
+                return [list(line) for line in lines]
+            else:
+                print('错误：未知词元类型：' + token)
+        tokens = tokenize(lines)
+        print(tokens[0])
+        # for i in range(11):
+            # print(tokens[i])   
+        class Vocab:  #@save
+            """文本词表"""
+            def __init__(self, tokens=None, min_freq=0, reserved_tokens=None):
+                if tokens is None:
+                    tokens = []
+                if reserved_tokens is None:
+                    reserved_tokens = []
+                # 按出现频率排序
+                counter = count_corpus(tokens)
+                # print(counter)
+                self._token_freqs = sorted(counter.items(), key=lambda x: x[1],
+                                        reverse=True)
+                # 未知词元的索引为0
+                self.idx_to_token = ['<unk>'] + reserved_tokens
+                self.token_to_idx = {token: idx
+                                    for idx, token in enumerate(self.idx_to_token)}
+                for token, freq in self._token_freqs:
+                    if freq < min_freq:
+                        break
+                    if token not in self.token_to_idx:
+                        self.idx_to_token.append(token)
+                        self.token_to_idx[token] = len(self.idx_to_token) - 1
+
+            def __len__(self):
+                return len(self.idx_to_token)
+
+            def __getitem__(self, tokens):
+                if not isinstance(tokens, (list, tuple)):
+                    return self.token_to_idx.get(tokens, self.unk)
+                return [self.__getitem__(token) for token in tokens]
+
+            def to_tokens(self, indices):
+                if not isinstance(indices, (list, tuple)):
+                    return self.idx_to_token[indices]
+                return [self.idx_to_token[index] for index in indices]
+
+            @property
+            def unk(self):  # 未知词元的索引为0
+                return 0
+
+            @property
+            def token_freqs(self):
+                return self._token_freqs
+
+        def count_corpus(tokens):  #@save
+            """统计词元的频率"""
+            # 这里的tokens是1D列表或2D列表
+            if len(tokens) == 0 or isinstance(tokens[0], list):
+                # 将词元列表展平成一个列表
+                tokens = [token for line in tokens for token in line]
+            return collections.Counter(tokens)
+        vocab = Vocab(tokens)
+        print(len(vocab))
+        # print(list(vocab.token_to_idx.items())[:10])
+        # print(len(vocab))
+        # print(vocab['hello'])
+        for i in [0,10]:
+            print('token: ', tokens[i])
+            print('index: ', vocab[tokens[i]])
+
+        def load_corpus_time_machine(max_tokens=-1):
+            print("--------------------------------")
+            lines = read_time_machine()
+            print("read_time_machine 读取的行数:", len(lines))
+            print("示例原始行[0]:", lines[0])
+            print("示例原始行[10]:", lines[10])
+
+            tokens = tokenize(lines, 'char')
+            print("tokenize 后行数(应该与行数相同):", len(tokens))
+            print("第 0 行被切成的字符列表:", tokens[0])
+            print("第 0 行字符个数:", len(tokens[0]))
+
+            line_lengths = [len(line) for line in tokens]
+            total_chars = sum(line_lengths)
+            print("前 5 行的字符数:", line_lengths[:5])
+            print("所有行字符数之和 (total_chars):", total_chars)
+
+            vocab = Vocab(tokens)
+            print("字符级词表大小 len(vocab):", len(vocab))
+            print("词表中前 20 个 token:", vocab.idx_to_token[:20])
+
+            corpus = [vocab[token] for line in tokens for token in line]
+            print("展开后的 corpus 长度 len(corpus):", len(corpus))
+            print("len(corpus) 是否等于 total_chars:", len(corpus) == total_chars)
+            if max_tokens > 0:
+                corpus = corpus[:max_tokens]
+            print(len(corpus))
+            return corpus, vocab
+        corpus, vocab = load_corpus_time_machine()
+        print(len(corpus), len(vocab))
+    '''
+## 循环神经网络RNN-数据预处理
+    '''bash
+
+        import collections
+        import re
+        from d2l import torch as d2l
+        d2l.DATA_HUB['time_machine'] = (
+            d2l.DATA_URL + 'timemachine.txt',
+            '090b5e7e70c295757f55df93cb0a180b9691891a')
+
+        def read_time_machine():
+            with open(d2l.download('time_machine'), 'r') as f:
+                lines = f.readlines()
+            return [re.sub('[^A-Za-z]+', ' ', line).strip().lower() for line in lines]
+        lines = read_time_machine()
+        print(lines[0])
+        print(lines[10])
+        print(len(lines))
+
+        def tokenize(lines, token='word'):
+            if token == 'word':
+                return [line.split() for line in lines]
+            elif token == 'char':
+                return [list(line) for line in lines]
+            else:
+                print('错误：未知词元类型：' + token)
+        tokens = tokenize(lines)
+        print(tokens[0])
+        # for i in range(11):
+            # print(tokens[i])   
+        class Vocab:  #@save
+            """文本词表"""
+            def __init__(self, tokens=None, min_freq=0, reserved_tokens=None):
+                if tokens is None:
+                    tokens = []
+                if reserved_tokens is None:
+                    reserved_tokens = []
+                # 按出现频率排序
+                counter = count_corpus(tokens)
+                # print(counter)
+                self._token_freqs = sorted(counter.items(), key=lambda x: x[1],
+                                        reverse=True)
+                # 未知词元的索引为0
+                self.idx_to_token = ['<unk>'] + reserved_tokens
+                self.token_to_idx = {token: idx
+                                    for idx, token in enumerate(self.idx_to_token)}
+                for token, freq in self._token_freqs:
+                    if freq < min_freq:
+                        break
+                    if token not in self.token_to_idx:
+                        self.idx_to_token.append(token)
+                        self.token_to_idx[token] = len(self.idx_to_token) - 1
+
+            def __len__(self):
+                return len(self.idx_to_token)
+
+            def __getitem__(self, tokens):
+                if not isinstance(tokens, (list, tuple)):
+                    return self.token_to_idx.get(tokens, self.unk)
+                return [self.__getitem__(token) for token in tokens]
+
+            def to_tokens(self, indices):
+                if not isinstance(indices, (list, tuple)):
+                    return self.idx_to_token[indices]
+                return [self.idx_to_token[index] for index in indices]
+
+            @property
+            def unk(self):  # 未知词元的索引为0
+                return 0
+
+            @property
+            def token_freqs(self):
+                return self._token_freqs
+
+        def count_corpus(tokens):  #@save
+            """统计词元的频率"""
+            # 这里的tokens是1D列表或2D列表
+            if len(tokens) == 0 or isinstance(tokens[0], list):
+                # 将词元列表展平成一个列表
+                tokens = [token for line in tokens for token in line]
+            return collections.Counter(tokens)
+        vocab = Vocab(tokens)
+        print(len(vocab))
+        # print(list(vocab.token_to_idx.items())[:10])
+        # print(len(vocab))
+        # print(vocab['hello'])
+        for i in [0,10]:
+            print('token: ', tokens[i])
+            print('index: ', vocab[tokens[i]])
+
+        def load_corpus_time_machine(max_tokens=-1):
+            print("--------------------------------")
+            lines = read_time_machine()
+            # print("read_time_machine 读取的行数:", len(lines))
+            # print("示例原始行[0]:", lines[0])
+            # print("示例原始行[10]:", lines[10])
+
+            tokens = tokenize(lines, 'char')
+            # print("tokenize 后行数(应该与行数相同):", len(tokens))
+            # print("第 0 行被切成的字符列表:", tokens[0])
+            # print("第 0 行字符个数:", len(tokens[0]))
+
+            line_lengths = [len(line) for line in tokens]
+            total_chars = sum(line_lengths)
+            # print("前 5 行的字符数:", line_lengths[:5])
+            # print("所有行字符数之和 (total_chars):", total_chars)
+
+            vocab = Vocab(tokens)
+            # print("这里是vocab--------------------------------")
+            # print(vocab)
+            # for token, freq in vocab.token_freqs[:20]:
+            #     print(token, freq)
+            # print("字符级词表大小 len(vocab):", len(vocab))
+            # print("词表中前 20 个 token:", vocab.idx_to_token[:20])
+
+            corpus = [vocab[token] for line in tokens for token in line]
+            print("展开后的 corpus 长度 len(corpus):", len(corpus))
+            print("len(corpus) 是否等于 total_chars:", len(corpus) == total_chars)
+            if max_tokens > 0:
+                corpus = corpus[:max_tokens]
+            print(len(corpus))
+            return corpus, vocab
+        # corpus, vocab = load_corpus_time_machine()
+        # print(len(corpus), len(vocab))
+
+        import torch
+        from torch import nn
+        from d2l import torch as d2l
+        from torch.nn import functional as F
+        import random
+        import collections
+        # T=1000
+
+        def seq_data_iter_random(corpus, batch_size, num_steps):
+            corpus = corpus[random.randint(0, num_steps - 1):]
+            print(corpus)
+            num_subseqs = (len(corpus) - 1) // num_steps
+            print(num_subseqs)
+            initial_indices = list(range(0, num_subseqs * num_steps, num_steps))
+            print(initial_indices)
+            random.shuffle(initial_indices)
+            print(initial_indices)
+            def data(pos):
+                return corpus[pos: pos + num_steps]
+            num_batches = num_subseqs // batch_size
+            print(num_batches)
+            for i in range(0, batch_size * num_batches, batch_size):
+                print(i)
+                initial_indices_per_batch = initial_indices[i: i + batch_size]
+                print(initial_indices_per_batch)
+                X = [data(j) for j in initial_indices_per_batch]
+                print(X)
+                Y = [data(j + 1) for j in initial_indices_per_batch]
+                print(Y)
+                yield torch.tensor(X), torch.tensor(Y)
+        my_seq = list(range(35))
+        print(my_seq)
+        # for X, Y in seq_data_iter_random(my_seq, batch_size=2, num_steps=5):
+        #     print('X: ', X, '\nY:', Y)
+
+        def seq_data_iter_sequential(corpus, batch_size, num_steps):
+            offset = random.randint(0, num_steps)
+            print(offset)
+            num_tokens = ((len(corpus) - offset - 1) // batch_size) * batch_size
+            print(num_tokens)
+            Xs = torch.tensor(corpus[offset: offset + num_tokens])
+            print(Xs)
+            Ys = torch.tensor(corpus[offset + 1: offset + 1 + num_tokens])
+            print(Ys)
+            Xs, Ys = Xs.reshape(batch_size, -1), Ys.reshape(batch_size, -1)
+            print(Xs)
+            print(Ys)
+            num_batches = Xs.shape[1] // num_steps
+            print(num_batches)
+            for i in range(0, num_steps * num_batches, num_steps):
+                X = Xs[:, i: i + num_steps]
+                print(X)
+                Y = Ys[:, i: i + num_steps]
+                print(Y)
+                yield X, Y
+        for X,Y in seq_data_iter_sequential(my_seq, batch_size=2, num_steps=5): 
+            print('X: ', X, '\nY:', Y)
+
+        class SeqDataLoader:
+            def __init__(self, batch_size, num_steps, use_random_iter, max_tokens):
+                if use_random_iter:
+                    self.data_iter_fn = seq_data_iter_random
+                else:
+                    self.data_iter_fn = seq_data_iter_sequential
+                self.corpus, self.vocab = load_corpus_time_machine(max_tokens)
+                self.batch_size, self.num_steps = batch_size, num_steps
+            def __iter__(self):
+                return self.data_iter_fn(self.corpus, self.batch_size, self.num_steps)
+            def __len__(self):
+                return len(self.corpus) // self.batch_size * self.num_steps
+
+        def load_data_time_machine(batch_size, num_steps, use_random_iter=False, max_tokens=10000): 
+
+            data_iter = SeqDataLoader(batch_size, num_steps, use_random_iter, max_tokens)
+            return data_iter, data_iter.vocab
+        data_iter, vocab = load_data_time_machine(batch_size=2, num_steps=5, use_random_iter=True, max_tokens=10000)
+        # for X, Y in data_iter:
+        #     print("开始训练--------------------------------")
+        #     print('X: ', X, '\nY:', Y)
+        #     break
+    '''
+## 循环神经网络训练的实现
+    '''bash
+        import math
+        from d2l import torch as d2l
+        import torch
+        from torch import nn
+        from torch.nn import functional as F
+        batch_size, num_steps = 32, 35
+        train_iter, vocab = load_data_time_machine(batch_size, num_steps)
+
+        X=torch.arange(10).reshape((2,5))
+        F.one_hot(X.T,28).shape
+        print(F.one_hot(X.T,28).shape)
+
+        def get_params(vocab_size, num_hiddens, device):
+            num_inputs = num_outputs = vocab_size
+            def normal(shape):
+                return torch.randn(size=shape, device=device) * 0.01
+            W_xh = normal((num_inputs, num_hiddens))
+            W_hh = normal((num_hiddens, num_hiddens))
+            b_h = torch.zeros(num_hiddens, device=device)
+            W_hq = normal((num_hiddens, num_outputs))
+            b_q = torch.zeros(num_outputs, device=device)
+            params = (W_xh, W_hh, b_h, W_hq, b_q)
+            for param in params:
+                param.requires_grad_(True)
+            return params
+        def init_rnn_state(batch_size, num_hiddens, device):
+            return (torch.zeros((batch_size, num_hiddens), device=device),)
+        def rnn(inputs, state, params):
+            W_xh, W_hh, b_h, W_hq, b_q = params
+            H, = state
+            outputs = []
+            for X in inputs:
+                H = torch.tanh(torch.mm(X, W_xh) + torch.mm(H, W_hh) + b_h)
+                Y = torch.mm(H, W_hq) + b_q
+                outputs.append(Y)
+            return torch.cat(outputs, dim=0), (H,)
+        class RNNModelScratch: #@save
+            """从零开始实现的循环神经网络模型"""
+            def __init__(self, vocab_size, num_hiddens, device,
+                        get_params, init_state, forward_fn):
+                self.vocab_size, self.num_hiddens = vocab_size, num_hiddens
+                self.params = get_params(vocab_size, num_hiddens, device)
+                self.init_state, self.forward_fn = init_state, forward_fn
+            def __call__(self, X, state):
+                X = F.one_hot(X.T, self.vocab_size).type(torch.float32)
+                return self.forward_fn(X, state, self.params)
+            def begin_state(self, batch_size, device):
+                # 需要同时传入 num_hiddens 和 device
+                return self.init_state(batch_size, self.num_hiddens, device)
+        num_hiddens = 512
+        net = RNNModelScratch(len(vocab), num_hiddens, d2l.try_gpu(), get_params,
+                            init_rnn_state, rnn)
+        state = net.begin_state(X.shape[0], d2l.try_gpu())
+        Y, new_state = net(X.to(d2l.try_gpu()), state)
+        print(Y.shape, len(new_state), new_state[0].shape)
+
+        def predict_ch8(prefix, num_preds, net, vocab, device):  #@save
+            """在prefix后面生成新字符"""
+            state = net.begin_state(batch_size=1, device=device)
+            outputs = [vocab[prefix[0]]]
+            get_input = lambda: torch.tensor([outputs[-1]], device=device).reshape((1, 1))
+            for y in prefix[1:]:  # 预热期
+                _, state = net(get_input(), state)
+                outputs.append(vocab[y])
+            for _ in range(num_preds):  # 预测num_preds步
+                y, state = net(get_input(), state)
+                outputs.append(int(y.argmax(dim=1).reshape(1)))
+            return ''.join(vocab.to_tokens(outputs))
+        print(predict_ch8('time traveller', 10, net, vocab, d2l.try_gpu()))
+
+        def grad_clipping(net, theta):  #@save
+            """裁剪梯度"""
+            if isinstance(net, nn.Module):
+                params = [p for p in net.parameters() if p.requires_grad]
+            else:
+                params = net.params
+            norm = torch.sqrt(sum(torch.sum((p.grad ** 2)) for p in params))
+            if norm > theta:
+                for param in params:
+                    param.grad[:] *= theta / norm
+        def train_epoch_ch8(net, train_iter, loss, updater, device, use_random_iter):
+            """训练网络一个迭代周期（定义见第8章）"""
+            state, timer = None, d2l.Timer()
+            metric = d2l.Accumulator(2)  # 训练损失之和,词元数量
+            for X, Y in train_iter:
+                if state is None or use_random_iter:
+                    # 在第一次迭代或使用随机抽样时初始化state
+                    state = net.begin_state(batch_size=X.shape[0], device=device)
+                else:
+                    if isinstance(net, nn.Module) and not isinstance(state, tuple):
+                        # state对于nn.GRU是个张量
+                        state.detach_()
+                    else:
+                        # state对于nn.LSTM或对于我们从零开始实现的模型是个张量
+                        for s in state:
+                            s.detach_()
+                y = Y.T.reshape(-1)
+                X, y = X.to(device), y.to(device)
+                y_hat, state = net(X, state)
+                l = loss(y_hat, y.long()).mean()
+                if isinstance(updater, torch.optim.Optimizer):
+                    updater.zero_grad()
+                    l.backward()
+                    grad_clipping(net, 1)
+                    updater.step()
+                else:
+                    l.backward()
+                    grad_clipping(net, 1)
+                    # 因为已经调用了mean函数
+                    updater(batch_size=1)
+                metric.add(l * y.numel(), y.numel())
+            return math.exp(metric[0] / metric[1]), metric[1] / timer.stop()
+        def train_ch8(net, train_iter, vocab, lr, num_epochs, device,
+                    use_random_iter=False):
+            """训练模型（定义见第8章）"""
+            loss = nn.CrossEntropyLoss()
+            animator = d2l.Animator(xlabel='epoch', ylabel='perplexity',
+                                    legend=['train'], xlim=[10, num_epochs])
+            # 初始化
+            if isinstance(net, nn.Module):
+                updater = torch.optim.SGD(net.parameters(), lr)
+            else:
+                updater = lambda batch_size: d2l.sgd(net.params, lr, batch_size)
+            predict = lambda prefix: predict_ch8(prefix, 50, net, vocab, device)
+            # 训练和预测
+            for epoch in range(num_epochs):
+                ppl, speed = train_epoch_ch8(net, train_iter, loss, updater, device, use_random_iter)
+                if (epoch + 1) % 10 == 0:
+                    print(predict('time traveller'))
+                    animator.add(epoch + 1, [ppl])
+            print(f'困惑度 {ppl:.1f}, {speed:.1f} 词元/秒 {str(device)}')
+            print(predict('time traveller'))
+            print(predict('traveller'))
+        num_epochs, lr = 500, 1
+        train_ch8(net, train_iter, vocab, lr, num_epochs, d2l.try_gpu(), use_random_iter=True)
+    '''
+## 循环网络的简洁实现
+    '''bash
+
+        import torch
+        from torch import nn
+        from d2l import torch as d2l
+        from torch.nn import functional as F
+        import random
+        import collections
+        batch_size, num_steps = 32, 35
+        train_iter, vocab = load_data_time_machine(batch_size, num_steps)
+        num_hiddens = 256
+        rnn_layer = nn.RNN(len(vocab), num_hiddens)
+        state = torch.zeros((1, batch_size, num_hiddens))
+        X = torch.rand(size=(num_steps, batch_size, len(vocab)))
+        Y, state_new = rnn_layer(X, state)
+        print(Y.shape, state_new.shape)
+        class RNNModel(nn.Module):
+            def __init__(self, rnn_layer, vocab_size, **kwargs):
+                super(RNNModel, self).__init__(**kwargs)
+                self.rnn = rnn_layer
+                self.vocab_size = vocab_size
+                self.num_hiddens = self.rnn.hidden_size
+                self.linear = nn.Linear(self.num_hiddens, self.vocab_size)
+            def forward(self, inputs, state):
+                X = F.one_hot(inputs.T.long(), self.vocab_size)
+                X = X.to(torch.float32)
+                Y, state = self.rnn(X, state)
+                output = self.linear(Y.reshape((-1, Y.shape[-1])))
+                return output, state
+            def begin_state(self, device, batch_size=1):
+                if not isinstance(self.rnn, nn.LSTM):
+                    return torch.zeros((self.num_directions * self.rnn.num_layers,
+                                        batch_size, self.num_hiddens), device=device)
+                else:
+                    return (torch.zeros((
+                        self.num_directions * self.rnn.num_layers,
+                        batch_size, self.num_hiddens), device=device),
+                    torch.zeros((
+                                self.num_directions * self.rnn.num_layers,
+                                batch_size, self.num_hiddens), device=device))
+        net = RNNModel(rnn_layer, vocab_size=len(vocab))
+        print(net)
+    '''
+## GRU 的实现
+    '''bash
+        import torch
+        from torch import nn
+        from d2l import torch as d2l
+        batch_size, num_steps = 32, 35
+        train_iter, vocab = d2l.load_data_time_machine(batch_size, num_steps)
+
+        def get_params(vocab_size, num_hiddens, device):
+            num_inputs = num_outputs = vocab_size
+            def normal(shape):
+                return torch.randn(size=shape, device=device) * 0.01
+            def three():
+                return (normal((num_inputs, num_hiddens)),
+                        normal((num_hiddens, num_hiddens)),
+                        torch.zeros(num_hiddens, device=device))
+            W_xz, W_hz, b_z = three()  # 更新门参数
+            W_xr, W_hr, b_r = three()  # 重置门参数
+            W_xh, W_hh, b_h = three()  # 候选隐状态参数
+            # 输出层参数
+            W_hq = normal((num_hiddens, num_outputs))
+            b_q = torch.zeros(num_outputs, device=device)
+            # 附加梯度
+            params = [W_xz, W_hz, b_z, W_xr, W_hr, b_r, W_xh, W_hh, b_h, W_hq, b_q]
+            for param in params:
+                param.requires_grad_(True)
+            return params
+        def init_gru_state(batch_size, num_hiddens, device):
+            return (torch.zeros((batch_size, num_hiddens), device=device),)
+        # def gru(inputs, state, params):
+        #     W_xz, W_hz, b_z, W_xr, W_hr, b_r, W_xh, W_hh, b_h, W_hq, b_q = params
+        #     H, = state
+        #     outputs = []
+        #     for X in inputs:
+        #         Z = torch.sigmoid((X @ W_xz) + (H @ W_hz) + b_z)
+        #         R = torch.sigmoid((X @ W_xr) + (H @ W_hr) + b_r)
+        #         H_tilda = torch.tanh((X @ W_xh) + ((R * H) @ W_hh) + b_h)
+        #         H = Z * H + (1 - Z) * H_tilda
+        #         Y = H @ W_hq + b_q
+        #         outputs.append(Y)
+        #     return torch.cat(outputs, dim=0), (H,)
+        gru_layer = nn.GRU(len(vocab), 256)
+
+        vocab_size, num_hiddens, device = len(vocab), 256, d2l.try_gpu()
+        num_epochs, lr = 500, 1
+        # model = d2l.RNNModelScratch(len(vocab), num_hiddens, device, get_params,
+        #                             init_gru_state, gru)
+        model = d2l.RNNModel(gru_layer, len(vocab))
+        d2l.train_ch8(model, train_iter, vocab, lr, num_epochs, device)
+    '''
+## LSTM的实现
+这个与上面GRU的区别是变得更复杂了一些，GRU是在这个基础上发展出来的
+    '''bash
+        import torch
+        from torch import nn
+        from d2l import torch as d2l
+
+        batch_size, num_steps = 32, 35
+        train_iter, vocab = d2l.load_data_time_machine(batch_size, num_steps)
+        def get_lstm_params(vocab_size, num_hiddens, device):
+            num_inputs = num_outputs = vocab_size
+            def normal(shape):
+                return torch.randn(size=shape, device=device) * 0.01
+            def three():
+                return (normal((num_inputs, num_hiddens)),
+                        normal((num_hiddens, num_hiddens)),
+                        torch.zeros(num_hiddens, device=device))
+            W_xi, W_hi, b_i = three()  # 输入门参数
+            W_xf, W_hf, b_f = three()  # 遗忘门参数
+            W_xo, W_ho, b_o = three()  # 输出门参数
+            W_xc, W_hc, b_c = three()  # 候选记忆元参数 
+            # 输出层参数
+            W_hq = normal((num_hiddens, num_outputs))
+            b_q = torch.zeros(num_outputs, device=device)
+            # 附加梯度
+            params = [W_xi, W_hi, b_i, W_xf, W_hf, b_f, W_xo, W_ho, b_o, W_xc, W_hc,
+                    b_c, W_hq, b_q]
+            for param in params:
+                param.requires_grad_(True)
+            return params
+        def init_lstm_state(batch_size, num_hiddens, device):
+            return (torch.zeros((batch_size, num_hiddens), device=device),
+                    torch.zeros((batch_size, num_hiddens), device=device))
+        def lstm(inputs, state, params):
+
+            [W_xi, W_hi, b_i, W_xf, W_hf, b_f, W_xo, W_ho, b_o, W_xc, W_hc,
+                    b_c, W_hq, b_q] = params
+            (H, C) = state
+            outputs = []
+            for X in inputs:
+                I = torch.sigmoid((X @ W_xi) + (H @ W_hi) + b_i)
+                F = torch.sigmoid((X @ W_xf) + (H @ W_hf) + b_f)
+                O = torch.sigmoid((X @ W_xo) + (H @ W_ho) + b_o)
+                C_tilda = torch.tanh((X @ W_xc) + (H @ W_hc) + b_c)
+                C = F * C + I * C_tilda
+                H = O * torch.tanh(C)
+                Y = (H @ W_hq) + b_q
+                outputs.append(Y)
+            return torch.cat(outputs, dim=0), (H, C)
+        vocab_size, num_hiddens, device = len(vocab), 256, d2l.try_gpu()
+        num_epochs, lr = 500, 1
+        model = d2l.RNNModelScratch(len(vocab), num_hiddens, device, get_params,
+                                    init_lstm_state, lstm)
+        d2l.train_ch8(model, train_iter, vocab, lr, num_epochs, device)
+    '''
+## 深层循环神经网络
+这个与上面的区别也就是我们增加了隐藏层的层数，这个我们直接使用高级API模式情况下直接指定层的数目就可以得到了
+    '''bash
+        import torch
+        from torch import nn
+        from d2l import torch as d2l
+        batch_size, num_steps = 32, 35
+        train_iter, vocab = d2l.load_data_time_machine(batch_size, num_steps)
+        vocab_size,num_hiddens,num_layers = len(vocab),256,2
+        num_inputs = vocab_size
+        device = d2l.try_gpu()
+        lstm_layer = nn.LSTM(num_inputs, num_hiddens, num_layers)
+        model = d2l.RNNModel(lstm_layer, len(vocab))
+        model = model.to(device)
+        num_epochs, lr = 500, 2
+        d2l.train_ch6(model, train_iter, vocab, lr, num_epochs, device)
+    '''
+## 双向循环神经网络
+这个实际上就是把我们的输入按照正常的顺序训练一遍之后再将输入进行颠倒之后训练得到的结果也要颠倒之后就是正常的结果，这个不能用于预测，这个很大情况下最适合做完形填空或者是考察对句子的理解,实现起来与前面的区别也就是添加了一个开关而已
+    '''bash
+        import torch
+        from torch import nn
+        from d2l import torch as d2l
+        batch_size, num_steps = 32, 35
+        train_iter, vocab = d2l.load_data_time_machine(batch_size, num_steps)
+        vocab_size, num_hiddens, num_layers = len(vocab), 256, 2
+        num_inputs = vocab_size
+        device = d2l.try_gpu()
+        lstm_layer = nn.LSTM(num_inputs, num_hiddens, num_layers, bidirectional=True)
+        model = d2l.RNNModel(lstm_layer, len(vocab))
+        model = model.to(device)
+        num_epochs, lr = 500, 1
+        d2l.train_ch6(model, train_iter, vocab, lr, num_epochs, device)
+    '''
+## 机器翻译数据集的构建
+    '''bash
+
+        import os
+        import torch
+        from d2l import torch as d2l
+        d2l.DATA_HUB['fra-eng'] = (d2l.DATA_URL + 'fra-eng.zip',
+                                '94646ad1522d91a60194c3d40b4fd879da9b4e21')
+        def read_data_nmt():
+            """载入“英语-法语”数据集"""
+            data_dir = d2l.download_extract('fra-eng')
+            with open(os.path.join(data_dir, 'fra.txt'), 'r',encoding='utf-8') as f:
+                return f.read()
+        raw_text = read_data_nmt()
+        print(raw_text[:75])
+        def preprocess_nmt(text):
+            """预处理“英语-法语”数据集"""
+            def no_space(char, prev_char):
+                return char in set(',.!?') and prev_char != ' '
+            text = text.replace('\u202f', ' ').replace('\xa0', ' ').lower()
+            out = [' ' + char if i > 0 and no_space(char, text[i - 1]) else char
+                for i, char in enumerate(text)]
+            return ''.join(out)
+        text = preprocess_nmt(raw_text)
+        print(text[:80])
+        def tokenize_nmt(text, num_examples=600):
+            """词元化“英语-法语”数据数据集"""
+            source, target = [], []
+            for i, line in enumerate(text.split('\n')):
+                if i >= num_examples:
+                    break
+                parts = line.split('\t')
+                if len(parts) == 2:
+                    source.append(parts[0].split(' '))
+                    target.append(parts[1].split(' '))
+            return source, target
+        source, target = tokenize_nmt(text)
+        print(source[:6])
+        print(target[:6])
+
+        def show_list_len_pair_hist(legend, xlabel, ylabel, xlist, ylist):
+            """绘制列表长度对的直方图"""
+            d2l.set_figsize()
+            _, _, patches = d2l.plt.hist(
+                [[len(l) for l in xlist], [len(l) for l in ylist]])
+            d2l.plt.xlabel(xlabel)
+            d2l.plt.ylabel(ylabel)
+            for patch in patches[1].patches:
+                patch.set_hatch('/')
+            d2l.plt.legend(legend)
+        show_list_len_pair_hist(['source', 'target'], '# tokens per sequence',
+                                'count', source, target)
+        src_vocab = d2l.Vocab(source, min_freq=2,
+                            reserved_tokens=['<pad>', '<bos>', '<eos>'])
+        def truncate_pad(line, num_steps, padding_token):
+            """截断或填充文本序列"""
+            if len(line) > num_steps:
+                return line[:num_steps]  # 截断
+            return line + [padding_token] * (num_steps - len(line))  # 填充
+        truncate_pad(src_vocab[source[0]], 10, src_vocab['<pad>'])
+        print(truncate_pad(src_vocab[source[0]], 10, src_vocab['<pad>']))
+        def build_array_nmt(lines, vocab, num_steps):
+            """将机器翻译的文本序列转换成小批量"""
+            lines = [vocab[line] for line in lines]
+            lines = [line + [vocab['<eos>']] for line in lines]
+            array = torch.tensor([truncate_pad(line, num_steps, vocab['<pad>']) for line in lines])
+            valid_len = (array != vocab['<pad>']).type(torch.int32).sum(1)
+            return array, valid_len
+        def load_data_nmt(batch_size, num_steps, num_examples=600):
+            """返回翻译数据集的迭代器和词表"""
+            text = preprocess_nmt(read_data_nmt())
+            source, target = tokenize_nmt(text, num_examples)
+            src_vocab = d2l.Vocab(source, min_freq=2,
+                                reserved_tokens=['<pad>', '<bos>', '<eos>'])
+            tgt_vocab = d2l.Vocab(target, min_freq=2,
+                                reserved_tokens=['<pad>', '<bos>', '<eos>'])
+            src_array, src_valid_len = build_array_nmt(source, src_vocab, num_steps)
+            tgt_array, tgt_valid_len = build_array_nmt(target, tgt_vocab, num_steps)
+            data_arrays = (src_array, src_valid_len, tgt_array, tgt_valid_len)
+            data_iter = d2l.load_array(data_arrays, batch_size)
+            return data_iter, src_vocab, tgt_vocab
+        train_iter, src_vocab, tgt_vocab = load_data_nmt(batch_size=2, num_steps=8)
+        for X, X_valid_len, Y, Y_valid_len in train_iter:
+            print('X:', X.type(torch.int32))
+            print('X的有效长度:', X_valid_len)
+            print('Y:', Y.type(torch.int32))
+            print('Y的有效长度:', Y_valid_len)
+            break
+    '''
+## 编码器解码器结构
+    '''bash
+
+        import collections
+        import math
+        from torch import nn
+        from d2l import torch as d2l
+        import torch
+        class EncoderDecoder(nn.Module):
+            """编码器-解码器架构的基类"""
+            def __init__(self, encoder, decoder, **kwargs):
+                super(EncoderDecoder, self).__init__(**kwargs)
+                self.encoder = encoder
+                self.decoder = decoder
+
+            def forward(self, enc_X, dec_X, *args):
+                enc_outputs = self.encoder(enc_X, *args)
+                dec_state = self.decoder.init_state(enc_outputs, *args)
+                return self.decoder(dec_X, dec_state)
+        class Seq2SeqEncoder(d2l.Encoder):
+            """用于序列到序列学习的循环神经网络编码器"""
+            def __init__(self, vocab_size, embed_size, num_hiddens, num_layers,
+                        dropout=0, **kwargs):
+                super(Seq2SeqEncoder, self).__init__(**kwargs)
+                # 嵌入层
+                self.embedding = nn.Embedding(vocab_size, embed_size)
+                self.rnn = nn.GRU(embed_size, num_hiddens, num_layers,
+                                dropout=dropout)
+            def forward(self, X, *args):
+                # 输出'X'的形状：(batch_size,num_steps,embed_size)
+                print('X.shape:',X.shape)
+                X = self.embedding(X)
+                print('Xemdedding之后的形状.shape:',X.shape)
+                # 在循环神经网络模型中，第一个轴对应于时间步
+                X = X.permute(1, 0, 2)
+                print('X.shape:',X.shape)
+                # 如果未提及状态，则默认为0
+                output, state = self.rnn(X)
+                print('output.shape:',output.shape)
+                print('state.shape:',state.shape)
+                # output的形状:(num_steps,batch_size,num_hiddens)
+                # state的形状:(num_layers,batch_size,num_hiddens)
+                return output, state
+        # encoder = Seq2SeqEncoder(vocab_size=10, embed_size=8, num_hiddens=16, num_layers=2)
+        # encoder.eval()
+        # X=torch.zeros((4,7),dtype=torch.long)
+        # output, state = encoder(X)
+        # print(output.shape, len(state))
+        # for X,  Y in zip(output, state):
+        #     print(X.shape, Y.shape)
+        #     print(X)
+        #     print(Y)
+        class Seq2SeqDecoder(d2l.Decoder):
+            """用于序列到序列学习的循环神经网络解码器"""
+            def __init__(self, vocab_size, embed_size, num_hiddens, num_layers,
+                        dropout=0, **kwargs):
+                super(Seq2SeqDecoder, self).__init__(**kwargs)
+                self.embedding = nn.Embedding(vocab_size, embed_size)
+                self.rnn = nn.GRU(embed_size + num_hiddens, num_hiddens, num_layers,
+                                dropout=dropout)
+                self.dense = nn.Linear(num_hiddens, vocab_size)
+            def init_state(self, enc_outputs, *args):
+                return enc_outputs[1]
+
+            def forward(self, X, state):
+                # X: (batch_size, num_steps) 的词元索引
+                # 嵌入后形状: (batch_size, num_steps, embed_size)
+                print('X.shape:',X.shape)
+                X = self.embedding(X)
+                print('Xembedding之后的形状.shape:',X.shape)
+                # 变换为以时间步为第一维: (num_steps, batch_size, embed_size)
+                X = X.permute(1, 0, 2)
+                print('X.shape:',X.shape)
+                # 取编码器最后一层的隐状态, 作为上下文
+                # state 形状: (num_layers, batch_size, num_hiddens)
+                # context 形状: (num_steps, batch_size, num_hiddens)
+                context = state[-1].repeat(X.shape[0], 1, 1)
+                print('context.shape:',context.shape)
+                # 在特征维上拼接上下文: (num_steps, batch_size, embed_size + num_hiddens)
+                X_and_context = torch.cat((X, context), 2)
+                print('X_and_context.shape:',X_and_context.shape)
+                output, state = self.rnn(X_and_context, state)
+                print('output.shape:',output.shape)
+                print('state.shape:',state.shape)
+                # output: (num_steps, batch_size, num_hiddens) -> (batch_size, num_steps, num_hiddens)
+                output = self.dense(output).permute(1, 0, 2)
+                print('output.shape:',output.shape)
+                return output, state
+        # decoder = Seq2SeqDecoder(vocab_size=10, embed_size=8, num_hiddens=16, num_layers=2)
+        # decoder.eval()
+        # # 确保传入编码器和解码器的都是长整型索引
+        # state = decoder.init_state(encoder(X.long()))
+        # output, state = decoder(X.long(), state)
+        # print(output.shape, len(state), state[0].shape)
+        def sequence_mask(X, valid_len, value=0):
+            """在序列中屏蔽不相关的项"""
+            maxlen = X.size(1)
+            mask = torch.arange((maxlen), dtype=torch.float32, device=X.device)[None, :] < valid_len[:, None]
+            X[~mask] = value
+            return X
+        # X = torch.tensor([[1, 2, 3], [4, 5, 6]])
+        # print(sequence_mask(X, torch.tensor([1, 2])))
+        def masked_softmax(X, valid_lens):
+            """通过在最后⼀个轴上遮蔽元素来执⾏ softmax 操作"""
+            if valid_lens is None:
+                return nn.functional.softmax(X, dim=-1)
+        class MaskedSoftmaxCELoss(nn.CrossEntropyLoss):
+            """带遮蔽的softmax交叉熵损失函数"""
+            # pred的形状：(batch_size,num_steps,vocab_size)
+            # label的形状：(batch_size,num_steps)
+            # valid_len的形状：(batch_size,)
+            def forward(self, pred, label, valid_len):
+                weights = torch.ones_like(label)
+                weights = sequence_mask(weights, valid_len)
+                self.reduction='none'
+                unweighted_loss = super(MaskedSoftmaxCELoss, self).forward(
+                    pred.permute(0, 2, 1), label)
+                weighted_loss = (unweighted_loss * weights).mean(dim=1)
+                return weighted_loss
+        # loss = MaskedSoftmaxCELoss()
+        def train_seq2seq(net, data_iter, lr, num_epochs, tgt_vocab, device):
+            """训练序列到序列模型"""
+            def xavier_init_weights(m):
+                if type(m) == nn.Linear:
+                    nn.init.xavier_uniform_(m.weight)
+                if type(m) == nn.GRU:
+                    for param in m._flat_weights_names:
+                        if "weight" in param:
+                            nn.init.xavier_uniform_(m._parameters[param])
+            net.apply(xavier_init_weights)
+            net.to(device)
+            optimizer = torch.optim.Adam(net.parameters(), lr=lr)
+            loss = MaskedSoftmaxCELoss()
+            net.train()
+            animator = d2l.Animator(xlabel='epoch', ylabel='loss',
+                            xlim=[10, num_epochs])
+            for epoch in range(num_epochs):
+                timer = d2l.Timer()
+                metric = d2l.Accumulator(2)  # 训练损失总和，词元数量
+                for batch in data_iter:
+                    optimizer.zero_grad()
+                    X, X_valid_len, Y, Y_valid_len = [x.to(device) for x in batch]
+                    bos = torch.tensor([tgt_vocab['<bos>']] * Y.shape[0],
+                                device=device).reshape(-1, 1)
+                    dec_input = torch.cat([bos, Y[:, :-1]], 1)  # 强制教学  
+                    # 兼容 EncoderDecoder 的返回值格式，只取预测结果
+                    outputs = net(X, dec_input, X_valid_len)
+                    Y_hat = outputs[0] if isinstance(outputs, tuple) else outputs
+                    l = loss(Y_hat, Y, Y_valid_len)
+                    l.sum().backward()	# 损失函数的标量进行“反向传播”
+                    d2l.grad_clipping(net, 1)
+                    num_tokens = Y_valid_len.sum()
+                    optimizer.step()
+                    with torch.no_grad():
+                        metric.add(l.sum(), num_tokens)
+                if (epoch + 1) % 10 == 0:
+                    animator.add(epoch + 1, (metric[0] / metric[1],))
+            print(f"loss {metric[0] / metric[1]:.3f}, {metric[1] / timer.stop():.1f} "
+                f"tokens/sec on {str(device)}")
+        embed_size, num_hiddens, num_layers, dropout = 32, 32, 2, 0.1
+        batch_size, num_steps = 64, 10
+        lr, num_epochs, device = 0.005, 300, d2l.try_gpu()
+        train_iter, src_vocab, tgt_vocab = load_data_nmt(batch_size, num_steps)
+        encoder = Seq2SeqEncoder(len(src_vocab), embed_size, num_hiddens, num_layers,
+                                dropout)
+        decoder = Seq2SeqDecoder(len(tgt_vocab), embed_size, num_hiddens, num_layers,
+                                dropout)
+        net = d2l.EncoderDecoder(encoder, decoder)
+        train_seq2seq(net, train_iter, lr, num_epochs, tgt_vocab, device)
+
+        def predict_seq2seq(net, src_sentence, src_vocab, tgt_vocab, num_steps,
+                            device, save_attention_weights=False):
+            """序列到序列模型的预测"""
+            # 在预测时将net设置为评估模式
+            net.eval()
+            src_tokens = src_vocab[src_sentence.lower().split(' ')] + [
+                src_vocab['<eos>']]
+            enc_valid_len = torch.tensor([len(src_tokens)], device=device)
+            src_tokens = d2l.truncate_pad(src_tokens, num_steps, src_vocab['<pad>'])
+            # 添加批量轴
+            enc_X = torch.unsqueeze(
+                torch.tensor(src_tokens, dtype=torch.long, device=device), dim=0)
+            enc_outputs = net.encoder(enc_X, enc_valid_len)
+            dec_state = net.decoder.init_state(enc_outputs, enc_valid_len)
+            # 添加批量轴
+            dec_X = torch.unsqueeze(torch.tensor(
+                [tgt_vocab['<bos>']], dtype=torch.long, device=device), dim=0)
+            output_seq, attention_weight_seq = [], []
+            for _ in range(num_steps):
+                Y, dec_state = net.decoder(dec_X, dec_state)
+                # 我们使用具有预测最高可能性的词元，作为解码器在下一时间步的输入
+                dec_X = Y.argmax(dim=2)
+                pred = dec_X.squeeze(dim=0).type(torch.int32).item()
+                # 保存注意力权重（稍后讨论）
+                if save_attention_weights:
+                    attention_weight_seq.append(net.decoder.attention_weights)
+                # 一旦序列结束词元被预测，输出序列的生成就完成了
+                if pred == tgt_vocab['<eos>']:
+                    break
+                output_seq.append(pred)
+            return ' '.join(tgt_vocab.to_tokens(output_seq)),attention_weight_seq
+    '''
