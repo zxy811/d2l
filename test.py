@@ -2178,3 +2178,152 @@ def read_time_machine():
 #             break
 #         output_seq.append(pred)
 #     return ' '.join(tgt_vocab.to_tokens(output_seq)),attention_weight_seq
+
+import torch
+from torch import nn
+from d2l import torch as d2l
+n_train = 50  # 训练样本数
+x_train,_=torch.sort(torch.rand(n_train)*5)
+def f(x):
+    return 2*torch.sin(x)+x**0.8
+y_train=f(x_train)+torch.normal(0,0.5,(n_train,))
+x_test=torch.arange(0,5,0.1)
+y_truth=f(x_test)
+n_test=len(x_test)
+print(n_test)
+def plot_kernel_reg(y_hat):
+    d2l.plot(x_test,[y_truth,y_hat],'x','y',legend=['Truth','Pred'],xlim=[0,5],ylim=[-1,5])
+    d2l.plt.plot(x_train,y_train,'o',alpha=0.5)
+y_hat=torch.repeat_interleave(y_train.mean(),n_test)
+plot_kernel_reg(y_hat)
+X_repeat=x_test.repeat_interleave(n_train).reshape((-1,n_train))
+attention_weights=nn.functional.softmax(-(X_repeat-x_train)**2/2,dim=1)
+y_hat=torch.matmul(attention_weights,y_train)
+plot_kernel_reg(y_hat)
+class NWKernelRegression(nn.Module):
+    def __init__(self,**kwargs):
+        super().__init__(**kwargs)
+        self.w=nn.Parameter(torch.rand((1,),requires_grad=True))
+    def forward(self,queries,keys,values):
+        queries=queries.repeat_interleave(keys.shape[1]).reshape((-1,keys.shape[1]))
+        self.attention_weights=nn.functional.softmax(-((queries-keys)*self.w)**2/2,dim=1)
+        return torch.bmm(self.attention_weights.unsqueeze(1),values.unsqueeze(-1)).reshape(-1)
+x_tile=x_train.repeat((n_train,1))
+y_tile=y_train.repeat((n_train,1))
+keys=x_tile[(1-torch.eye(n_train)).type(torch.bool)].reshape((n_train,-1))
+values=y_tile[(1-torch.eye(n_train)).type(torch.bool)].reshape((n_train,-1))
+net=NWKernelRegression()
+loss=nn.MSELoss(reduction='none')
+trainer=torch.optim.SGD(net.parameters(),lr=0.5)
+animator=d2l.Animator(xlabel='epoch',ylabel='loss',xlim=[1,5])
+for epoch in range(5):
+    trainer.zero_grad()
+    l=loss(net(x_test,keys,values),y_truth)
+    l.sum().backward()
+    trainer.step()
+    print(f'epoch {epoch + 1}, loss {float(l.sum()):.6f}')
+    animator.add(epoch + 1, float(l.sum()))
+plot_kernel_reg(net(x_test, keys, values).unsqueeze(1).reshape(-1))
+d2l.plt.show()
+def masked_softmax(X,valid_lens):
+    if valid_lens is None:
+        return nn.functional.softmax(X,dim=-1)
+    else:
+        shape=X.shape
+        if valid_lens.dim()==1:
+            valid_lens=torch.repeat_interleave(valid_lens,shape[1])
+        else:
+            valid_lens=valid_lens.reshape(-1)
+        X=d2l.sequence_mask(X.reshape(-1,shape[-1]),valid_lens,value=-1e6)
+        return nn.functional.softmax(X.reshape(shape),dim=-1)
+masked_softmax(torch.tensor([[1,2,3],[4,5,6]]),torch.tensor([1,2]))
+class AdditiveAttention(nn.Module):
+    def __init__(self,key_size,query_size,num_hiddens,dropout,**kwargs):
+        super().__init__(**kwargs)
+        self.W_k=nn.Linear(key_size,num_hiddens,bias=False)
+        self.W_q=nn.Linear(query_size,num_hiddens,bias=False)
+        self.w_v=nn.Linear(num_hiddens,1,bias=False)
+        self.dropout=nn.Dropout(dropout)
+    def forward(self,queries,keys,values,valid_lens):
+        queries=self.W_q(queries)
+        keys=self.W_k(keys)
+        features=queries.unsqueeze(2)+keys.unsqueeze(1)
+        features=torch.tanh(features)
+class DotProductAttention(nn.Module):
+    def __init__(self,dropout,**kwargs):
+        super().__init__(**kwargs)
+        self.dropout=nn.Dropout(dropout)
+    def forward(self,queries,keys,values,valid_lens=None):
+        d=queries.shape[-1]
+        scores=torch.bmm(queries,keys.transpose(1,2))/math.sqrt(d)
+        self.attention_weights=masked_softmax(scores,valid_lens)
+        return torch.bmm(self.dropout(self.attention_weights),values)
+queries=torch.normal(0,1,(2,1,20))
+keys=torch.normal(0,1,(2,10,2))
+values=torch.normal(0,1,(2,10,4))
+#@save
+class AttentionDecoder(d2l.Decoder):
+    """带有注意力机制解码器的基本接口"""
+    def __init__(self, **kwargs):
+        super(AttentionDecoder, self).__init__(**kwargs)
+
+    @property
+    def attention_weights(self):
+        raise NotImplementedError
+class Seq2SeqAttentionDecoder(AttentionDecoder):
+    def __init__(self, vocab_size, embed_size, num_hiddens, num_layers,
+                 dropout=0, **kwargs):
+        super(Seq2SeqAttentionDecoder, self).__init__(**kwargs)
+        self.attention = d2l.AdditiveAttention(
+            num_hiddens, num_hiddens, num_hiddens, dropout)
+        self.embedding = nn.Embedding(vocab_size, embed_size)
+        self.rnn = nn.GRU(
+            embed_size + num_hiddens, num_hiddens, num_layers,
+            dropout=dropout)
+        self.dense = nn.Linear(num_hiddens, vocab_size)
+
+    def init_state(self, enc_outputs, enc_valid_lens, *args):
+        # outputs的形状为(batch_size，num_steps，num_hiddens).
+        # hidden_state的形状为(num_layers，batch_size，num_hiddens)
+        outputs, hidden_state = enc_outputs
+        return (outputs.permute(1, 0, 2), hidden_state, enc_valid_lens)
+
+    def forward(self, X, state):
+        # enc_outputs的形状为(batch_size,num_steps,num_hiddens).
+        # hidden_state的形状为(num_layers,batch_size,
+        # num_hiddens)
+        enc_outputs, hidden_state, enc_valid_lens = state
+        # 输出X的形状为(num_steps,batch_size,embed_size)
+        X = self.embedding(X).permute(1, 0, 2)
+        outputs, self._attention_weights = [], []
+        for x in X:
+            # query的形状为(batch_size,1,num_hiddens)
+            query = torch.unsqueeze(hidden_state[-1], dim=1)
+            # context的形状为(batch_size,1,num_hiddens)
+            context = self.attention(
+                query, enc_outputs, enc_outputs, enc_valid_lens)
+            # 在特征维度上连结
+            x = torch.cat((context, torch.unsqueeze(x, dim=1)), dim=-1)
+            # 将x变形为(1,batch_size,embed_size+num_hiddens)
+            out, hidden_state = self.rnn(x.permute(1, 0, 2), hidden_state)
+            outputs.append(out)
+            self._attention_weights.append(self.attention.attention_weights)
+        # 全连接层变换后，outputs的形状为
+        # (num_steps,batch_size,vocab_size)
+        outputs = self.dense(torch.cat(outputs, dim=0))
+        return outputs.permute(1, 0, 2), [enc_outputs, hidden_state,
+                                          enc_valid_lens]
+
+    @property
+    def attention_weights(self):
+        return self._attention_weights
+encoder = d2l.Seq2SeqEncoder(vocab_size=10, embed_size=8, num_hiddens=16,
+                             num_layers=2)
+encoder.eval()
+decoder = Seq2SeqAttentionDecoder(vocab_size=10, embed_size=8, num_hiddens=16,
+                                  num_layers=2)
+decoder.eval()
+X = torch.zeros((4, 7), dtype=torch.long)  # (batch_size,num_steps)
+state = decoder.init_state(encoder(X), None)
+output, state = decoder(X, state)
+output.shape, len(state), state[0].shape, len(state[1]), state[1][0].shape

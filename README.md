@@ -216,7 +216,7 @@
 ## 线性回归中平方损失函数的统计学正当性：
     线性回归之所以普遍采用均方误差（MSE）作为损失函数，其深层数学依据在于极大似然估计（MLE）与高斯分布的内在等价性。如果我们假设观测数据中的随机噪声服从均值为零的正态分布，那么在数学推导上，最大化观测到当前数据集的总概率（即极大似然），就完全等价于最小化预测值与真实值之间的平方误差之和。这一结论有力地证明了：在噪声符合高斯分布的假设下，最小二乘法不仅是一种直观的几何选择，更是统计学意义上的最优解。\
     下面图片中的结论都是通过极大似然法求出的
-![L1与L2对应噪声模型对比图](D:/d2l/image.png)
+![L1与L2对应噪声模型对比图](D:/d2l/image.png)image
 
 ## 线性回归实现
 ![线性结构网络图](D:/d2l/image1.png)
@@ -2802,3 +2802,139 @@ if __name__ == "__main__":
                 output_seq.append(pred)
             return ' '.join(tgt_vocab.to_tokens(output_seq)),attention_weight_seq
     '''
+## 注意力机制的实现
+简单来说实际上注意力机制就是我们使权重有权重的关注我们想要的对应的键值对（就是训练数据组成的实际上）然后这个过程你可以用非参数学习的关注（softmax实现），也可以使用有参数的进行学习来关注这样的话好处就是结果可能更加符合我们的训练时候的键值对但是不一定真的符合我们的曲线可能会有尖端或者是不平滑现象的产生
+    '''
+        import torch
+        from torch import nn
+        from d2l import torch as d2l
+        n_train = 50  # 训练样本数
+        x_train,_=torch.sort(torch.rand(n_train)*5)
+        def f(x):
+            return 2*torch.sin(x)+x**0.8
+        y_train=f(x_train)+torch.normal(0,0.5,(n_train,))
+        x_test=torch.arange(0,5,0.1)
+        y_truth=f(x_test)
+        n_test=len(x_test)
+        print(n_test)
+        def plot_kernel_reg(y_hat):
+            d2l.plot(x_test,[y_truth,y_hat],'x','y',legend=['Truth','Pred'],xlim=[0,5],ylim=[-1,5])
+            d2l.plt.plot(x_train,y_train,'o',alpha=0.5)
+        y_hat=torch.repeat_interleave(y_train.mean(),n_test)
+        plot_kernel_reg(y_hat)
+        X_repeat=x_test.repeat_interleave(n_train).reshape((-1,n_train))
+        attention_weights=nn.functional.softmax(-(X_repeat-x_train)**2/2,dim=1)
+        y_hat=torch.matmul(attention_weights,y_train)
+        plot_kernel_reg(y_hat)
+        class NWKernelRegression(nn.Module):
+            def __init__(self,**kwargs):
+                super().__init__(**kwargs)
+                self.w=nn.Parameter(torch.rand((1,),requires_grad=True))
+            def forward(self,queries,keys,values):
+                queries=queries.repeat_interleave(keys.shape[1]).reshape((-1,keys.shape[1]))
+                self.attention_weights=nn.functional.softmax(-((queries-keys)*self.w)**2/2,dim=1)
+                return torch.bmm(self.attention_weights.unsqueeze(1),values.unsqueeze(-1)).reshape(-1)
+        x_tile=x_train.repeat((n_train,1))
+        y_tile=y_train.repeat((n_train,1))
+        keys=x_tile[(1-torch.eye(n_train)).type(torch.bool)].reshape((n_train,-1))
+        values=y_tile[(1-torch.eye(n_train)).type(torch.bool)].reshape((n_train,-1))
+        net=NWKernelRegression()
+        loss=nn.MSELoss(reduction='none')
+        trainer=torch.optim.SGD(net.parameters(),lr=0.5)
+        animator=d2l.Animator(xlabel='epoch',ylabel='loss',xlim=[1,5])
+        for epoch in range(5):
+            trainer.zero_grad()
+            l=loss(net(x_test,keys,values),y_truth)
+            l.sum().backward()
+            trainer.step()
+            print(f'epoch {epoch + 1}, loss {float(l.sum()):.6f}')
+            animator.add(epoch + 1, float(l.sum()))
+        plot_kernel_reg(net(x_test, keys, values).unsqueeze(1).reshape(-1))
+        d2l.plt.show()
+    '''
+## 评分函数
+这里介绍了两个评分函数一个是加性的评分，一个是点积性的评分，加性的是指当你的查询和键值的维度不一样的时候，或者是含义不同的时候使用我们这里给他们了可以学习的参数，所以相当于通过了一个MLP进行的评分，但是这里的点积形式的只能处理维度一样的，我们在前期可能会通过学习的方式将每一个键值对换成向量矩阵的形式这里的点击就是没有学习的参数纯进行的数学运算，根据矩阵的（向量的）乘法来进行的
+
+    '''bash
+        class AdditiveAttention(nn.Module):
+            def __init__(self,key_size,query_size,num_hiddens,dropout,**kwargs):
+                super().__init__(**kwargs)
+                self.W_k=nn.Linear(key_size,num_hiddens,bias=False)
+                self.W_q=nn.Linear(query_size,num_hiddens,bias=False)
+                self.w_v=nn.Linear(num_hiddens,1,bias=False)
+                self.dropout=nn.Dropout(dropout)
+            def forward(self,queries,keys,values,valid_lens):
+                queries=self.W_q(queries)
+                keys=self.W_k(keys)
+                features=queries.unsqueeze(2)+keys.unsqueeze(1)
+                features=torch.tanh(features)
+        class DotProductAttention(nn.Module):
+            def __init__(self,dropout,**kwargs):
+                super().__init__(**kwargs)
+                self.dropout=nn.Dropout(dropout)
+            def forward(self,queries,keys,values,valid_lens=None):
+                d=queries.shape[-1]
+                scores=torch.bmm(queries,keys.transpose(1,2))/math.sqrt(d)
+                self.attention_weights=masked_softmax(scores,valid_lens)
+                return torch.bmm(self.dropout(self.attention_weights),values)
+        queries=torch.normal(0,1,(2,1,20))
+        keys=torch.normal(0,1,(2,10,2))
+        values=torch.normal(0,1,(2,10,4))
+    '''
+## 带有线性加权注意力机制的seqtoseq翻译模型
+1. 首先有一点你需要知道就是翻译不是一对一的因为不同语言的语法是不一样的，所以相当于翻译就是知道你原句子的大概意思之后进行预测的工作
+2. 现在这个下面的不同之处在decode，原本我们的decode工作是把encode输出的最后一层hidden_state与当前的x（这个是指正确的上一个预测的值，因为我们不可能真的使用我们预测的作为输入，因为刚开始肯定有偏差这样的话偏差会越来越大的，所以一般情况下我们使用的都是正确答案作为训练）一起拼在一起作为输入进行的预测，之后输出预测结果的
+3. 现在这个不同的时候引入了一个注意力的机制，这个注意力机制的输入query是上一个时刻encode输出的最后一层的隐藏层也就是记录了当前所有的记忆的那一个层，之后key和value指encode在历史的每一次预测结束之后的所有的隐藏层，之后经过注意力机制之后相当于给之前的所有的记忆进行了一个加权求和的操作之后再与x拼接起来之后才输入进decode的最后一层输出预测层
+    '''bash
+        class Seq2SeqAttentionDecoder(AttentionDecoder):
+            def __init__(self, vocab_size, embed_size, num_hiddens, num_layers,
+                        dropout=0, **kwargs):
+                super(Seq2SeqAttentionDecoder, self).__init__(**kwargs)
+                self.attention = d2l.AdditiveAttention(
+                    num_hiddens, num_hiddens, num_hiddens, dropout)
+                self.embedding = nn.Embedding(vocab_size, embed_size)
+                self.rnn = nn.GRU(
+                    embed_size + num_hiddens, num_hiddens, num_layers,
+                    dropout=dropout)
+                self.dense = nn.Linear(num_hiddens, vocab_size)
+
+            def init_state(self, enc_outputs, enc_valid_lens, *args):
+                # outputs的形状为(batch_size，num_steps，num_hiddens).
+                # hidden_state的形状为(num_layers，batch_size，num_hiddens)
+                outputs, hidden_state = enc_outputs
+                return (outputs.permute(1, 0, 2), hidden_state, enc_valid_lens)
+
+            def forward(self, X, state):
+                # enc_outputs的形状为(batch_size,num_steps,num_hiddens).
+                # hidden_state的形状为(num_layers,batch_size,
+                # num_hiddens)
+                enc_outputs, hidden_state, enc_valid_lens = state
+                # 输出X的形状为(num_steps,batch_size,embed_size)
+                X = self.embedding(X).permute(1, 0, 2)
+                outputs, self._attention_weights = [], []
+                for x in X:
+                    # query的形状为(batch_size,1,num_hiddens)
+                    query = torch.unsqueeze(hidden_state[-1], dim=1)
+                    # context的形状为(batch_size,1,num_hiddens)
+                    context = self.attention(
+                        query, enc_outputs, enc_outputs, enc_valid_lens)
+                    # 在特征维度上连结
+                    x = torch.cat((context, torch.unsqueeze(x, dim=1)), dim=-1)
+                    # 将x变形为(1,batch_size,embed_size+num_hiddens)
+                    out, hidden_state = self.rnn(x.permute(1, 0, 2), hidden_state)
+                    outputs.append(out)
+                    self._attention_weights.append(self.attention.attention_weights)
+                # 全连接层变换后，outputs的形状为
+                # (num_steps,batch_size,vocab_size)
+                outputs = self.dense(torch.cat(outputs, dim=0))
+                return outputs.permute(1, 0, 2), [enc_outputs, hidden_state,
+                                                enc_valid_lens]
+
+            @property
+            def attention_weights(self):
+                return self._attention_weights
+    '''
+## 自注意力机制
+实际上就是上面的注意力机制当quary\key\value都是一样的就代表是自注意力机制了
+## 多头注意力机制
+就是并行开了几个单注意力机制让他去学不同的特征在得到输出之后再结合起来再进入到下面就是了
